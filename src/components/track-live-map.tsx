@@ -10,11 +10,13 @@ export function TrackLiveMap({
   crew,
   technicianName,
   perspective = "resident",
+  mapClassName,
 }: {
   incident: MasterIncident;
   crew: FieldCrew;
   technicianName: string;
   perspective?: "resident" | "technician";
+  mapClassName?: string;
 }) {
   const elRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
@@ -155,7 +157,7 @@ export function TrackLiveMap({
     <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white">
       <div
         ref={elRef}
-        className="h-64 w-full md:h-80"
+        className={mapClassName ?? "h-64 w-full md:h-80"}
         style={{ minHeight: 256 }}
       />
       <div className="flex items-start justify-between gap-3 bg-white px-3 py-2">
