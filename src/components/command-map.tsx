@@ -22,6 +22,8 @@ interface CommandMapProps {
   crews: FieldCrew[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  showInvestigations?: boolean;
+  className?: string;
 }
 
 export function CommandMap({
@@ -30,6 +32,8 @@ export function CommandMap({
   crews,
   selectedId,
   onSelect,
+  showInvestigations = true,
+  className,
 }: CommandMapProps) {
   const elRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
@@ -57,7 +61,7 @@ export function CommandMap({
         crews: crews.map((c) => [c.id, c.status, c.location]),
         selectedId,
       }),
-    [incidents, investigations, crews, selectedId],
+    [incidents, investigations, crews, selectedId, showInvestigations],
   );
 
   useEffect(() => {
@@ -144,7 +148,7 @@ export function CommandMap({
         }
       }
 
-      for (const inv of investigations) {
+      for (const inv of showInvestigations ? investigations : []) {
         if (inv.status === "closed_recovered" || inv.status === "closed_no_finding") continue;
         const icon = L.divIcon({
           className: "",
@@ -192,12 +196,12 @@ export function CommandMap({
     return () => {
       active = false;
     };
-  }, [signature, incidents, investigations, crews, selectedId, mapReady]);
+  }, [signature, incidents, investigations, crews, selectedId, mapReady, showInvestigations]);
 
   return (
     <div
       ref={elRef}
-      className="h-full min-h-[320px] w-full overflow-hidden rounded-none"
+      className={className ?? "h-full min-h-[320px] w-full overflow-hidden rounded-none"}
     />
   );
 }

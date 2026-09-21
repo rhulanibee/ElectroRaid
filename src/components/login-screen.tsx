@@ -1,115 +1,134 @@
 "use client";
 
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { PERSONAS, useSession } from "@/lib/use-session";
-import { goReplace } from "@/lib/hard-nav";
-import { PRODUCT_NAME, PRODUCT_BYLINE } from "@/lib/brand";
+import { useEffect, useState } from "react";
+import { AuthField, AuthFrame, authControlClass, authPrimaryClass } from "@/components/auth-frame";
+import { GoogleSignInButton } from "@/components/google-sign-in";
+import { PERSONAS, afterLoginPath, useSession } from "@/lib/use-session";
+import { go, goReplace } from "@/lib/hard-nav";
+import { cn } from "@/lib/utils";
+
+function queryParam(name: string) {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(name);
+}
 
 export function LoginScreen() {
-  const { login, loginWithPassword } = useSession();
-  const [email, setEmail] = useState("");
+  const { login, loginWithPassword, loginWithGoogle } = useSession();
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [staffOpen, setStaffOpen] = useState(false);
 
-  function enter(id: string) {
-    const persona = login(id);
-    if (persona) goReplace(persona.home);
+  useEffect(() => {
+    if (queryParam("staff") === "1") setStaffOpen(true);
+  }, []);
+
+  function finish(home: string) {
+    goReplace(home);
   }
 
-  function submitPassword(e: React.FormEvent) {
+  function submit(e: React.FormEvent) {
     e.preventDefault();
-    const persona = loginWithPassword(email, password);
-    if (!persona) {
-      setError("Email or password is incorrect.");
+    if (!identifier.trim() || !password.trim()) {
+      setError("Enter your account number (or email) and password.");
       return;
     }
-    goReplace(persona.home);
+    const persona = loginWithPassword(identifier, password);
+    if (!persona) {
+      setError("Account number / email or password is incorrect.");
+      return;
+    }
+    finish(afterLoginPath(persona, queryParam("next")));
   }
 
+  function google() {
+    const persona = loginWithGoogle();
+    if (persona) finish(afterLoginPath(persona, queryParam("next")));
+  }
+
+  function staff(id: string) {
+    const persona = login(id);
+    if (persona) finish(afterLoginPath(persona, queryParam("next")));
+  }
+
+  const staffPersonas = PERSONAS.filter((p) => p.role !== "resident");
+
   return (
-    <div className="min-h-dvh px-4 py-10">
-      <div className="mx-auto max-w-5xl">
-        <div className="text-[10px] tracking-[0.24em] text-primary uppercase">
-          City of Tshwane · {PRODUCT_BYLINE}
-        </div>
-        <h1 className="font-heading mt-2 text-3xl font-semibold tracking-tight md:text-4xl">
-          Sign in to {PRODUCT_NAME}
-        </h1>
-        <p className="text-muted-foreground mt-2 max-w-2xl text-sm">
-          Outage reporting, live technician tracking, control-room dispatch, and
-          revenue protection — choose your workspace.
+    <AuthFrame title="Welcome Back" subtitle="Sign in with your municipal account.">
+      <form onSubmit={submit} className="space-y-3">
+        <AuthField label="Username / Account Number">
+          <input
+            className={authControlClass}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            autoComplete="username"
+            placeholder="Account number or email"
+          />
+        </AuthField>
+        <AuthField label="Password">
+          <input
+            type="password"
+            className={authControlClass}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            placeholder="Enter password"
+          />
+        </AuthField>
+        {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
+        <button type="submit" className={authPrimaryClass}>
+          Login
+        </button>
+        <p className="text-center text-[11px] text-[#6B7280]">
+          Household demo: account <span className="font-mono">3218840441</span> ·
+          password <span className="font-mono">electroraid</span>
         </p>
+      </form>
 
-        <div className="mt-8 grid gap-3 md:grid-cols-2">
-          {PERSONAS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => enter(p.id)}
-              className="rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-primary/50 hover:bg-muted/40"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-primary text-[10px] tracking-wide uppercase">
-                    {p.role.replaceAll("_", " ")}
-                  </div>
-                  <div className="font-heading mt-1 text-lg font-semibold">
-                    {p.name}
-                  </div>
-                  <div className="text-muted-foreground text-xs">{p.title}</div>
-                </div>
-                <span className="bg-primary/15 text-primary rounded-full px-2 py-0.5 text-[10px]">
-                  Sign in
-                </span>
-              </div>
-              <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
-                {p.blurb}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {p.duties.map((d) => (
-                  <span
-                    key={d}
-                    className="rounded-full border border-border px-2 py-0.5 text-[10px]"
-                  >
-                    {d}
-                  </span>
-                ))}
-              </div>
-              <div className="text-muted-foreground mt-4 font-mono text-[11px]">
-                {p.email}
-              </div>
-            </button>
-          ))}
-        </div>
-
-        <form
-          onSubmit={submitPassword}
-          className="mt-8 max-w-md rounded-xl border border-border p-4"
-        >
-          <div className="text-xs font-medium">Sign in with email</div>
-          <div className="mt-3 space-y-2">
-            <Input
-              placeholder="Work email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="username"
-            />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-            <Button type="submit" className="w-full">
-              Sign in
-            </Button>
-            {error ? <p className="text-destructive text-xs">{error}</p> : null}
-          </div>
-        </form>
+      <div className="relative my-4 text-center text-xs font-medium tracking-wide text-[#9CA3AF] uppercase">
+        <span className="relative z-10 bg-white px-2">or</span>
+        <div className="absolute inset-x-0 top-1/2 border-t border-[#E5E7EB]" />
       </div>
-    </div>
+
+      <GoogleSignInButton onClick={google} />
+
+      <p className="mt-5 text-center text-sm text-[#6B7280]">
+        New household?{" "}
+        <button
+          type="button"
+          className="font-semibold text-[#24A148] hover:underline"
+          onClick={() => go("/register")}
+        >
+          Register
+        </button>
+      </p>
+
+      <div className="mt-5 border-t border-[#E5E7EB] pt-4">
+        <button
+          type="button"
+          onClick={() => setStaffOpen((v) => !v)}
+          className="w-full text-center text-xs font-medium text-[#6B7280] hover:text-[#121417]"
+        >
+          Municipal staff sign-in
+        </button>
+        {staffOpen ? (
+          <div className="mt-3 grid gap-2">
+            {staffPersonas.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => staff(p.id)}
+                className={cn(
+                  "rounded-xl border border-[#E5E7EB] px-3 py-2 text-left text-sm hover:border-[#24A148] hover:bg-[#E8F6EC]",
+                )}
+              >
+                <div className="font-semibold text-[#121417]">{p.name}</div>
+                <div className="text-xs text-[#6B7280]">{p.title}</div>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </AuthFrame>
   );
 }
