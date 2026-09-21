@@ -14,6 +14,8 @@ export async function POST(request: Request) {
       caption?: string;
       dataUri?: string;
       serialNumber?: string;
+      /** Repair evidence captured on the handset for this job. */
+      repairPhoto?: { name: string; type: string; bytes: number };
       actorId?: string;
       rating?: number;
     };
@@ -43,6 +45,7 @@ export async function POST(request: Request) {
         store.completeOutage(body.targetId, body.notes ?? "Work completed.", {
           serialNumber: body.serialNumber,
           actorId: body.actorId,
+          repairPhoto: body.repairPhoto,
         });
         break;
       case "close":

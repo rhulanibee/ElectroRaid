@@ -10,17 +10,22 @@ export function CityscapeBackdrop({
   children,
   dim = true,
   className,
+  src = LOCAL_HERO,
+  alt = "Union Buildings, Pretoria — City of Tshwane",
 }: {
   children: React.ReactNode;
   dim?: boolean;
   className?: string;
+  /** Background image to stretch over the backdrop. Defaults to the bundled Tshwane hero. */
+  src?: string;
+  alt?: string;
 }) {
   return (
     <div className={cn("relative overflow-hidden bg-[#1a1f1c]", className ?? "min-h-dvh")}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={LOCAL_HERO}
-        alt="Union Buildings, Pretoria — City of Tshwane"
+        src={src}
+        alt={alt}
         className="absolute inset-0 h-full w-full object-cover"
         onError={(e) => {
           e.currentTarget.onerror = null;

@@ -539,7 +539,12 @@ class ElectroRaidStore {
   completeOutage(
     incidentId: string,
     notes: string,
-    extras?: { serialNumber?: string; actorId?: string },
+    extras?: {
+      serialNumber?: string;
+      actorId?: string;
+      /** Photo the technician attached as repair evidence. */
+      repairPhoto?: { name: string; type: string; bytes: number };
+    },
   ) {
     const idx = this.incidents.findIndex((i) => i.id === incidentId);
     if (idx < 0) throw new Error("Unknown incident");
@@ -579,6 +584,7 @@ class ElectroRaidStore {
         notes,
         component: "11kV cable joint replaced",
         serialNumber: extras?.serialNumber ?? null,
+        repairPhoto: extras?.repairPhoto ?? null,
       },
     });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,12 @@ import { evidenceSvg } from "@/lib/evidence";
 import { postJson, usePlatform } from "@/lib/use-platform";
 import { useSession } from "@/lib/use-session";
 import { enqueue, flushOutbox, pendingCount } from "@/lib/offline";
+import {
+  REPAIR_PHOTO_ACCEPT,
+  repairPhotoError,
+  repairPhotoMeta,
+  type RepairPhoto,
+} from "@/lib/repair-photo";
 import { TrackLiveMap, navigateUrl, technicianNameForCrew } from "@/components/track-live-map";
 import { distanceMetres, formatKm, etaMinutes } from "@/lib/geo";
 import type { FieldCrew, MasterIncident } from "@/lib/types";
@@ -20,6 +27,7 @@ export function TechnicianApp() {
   const [notes, setNotes] = useState("Replaced failed 11 kV cable joint. Supply restored.");
   const [serial, setSerial] = useState("JV-11KV-44190");
   const [signature, setSignature] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<RepairPhoto | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,7 +65,7 @@ export function TechnicianApp() {
     [snapshot],
   );
 
-  async function act(payload: Record<string, unknown>) {
+  async function act(payload: Record<string, unknown>, successMessage?: string) {
     const body = { ...payload, actorId: persona?.id };
     if (!online) {
       await enqueue(body);
@@ -66,7 +74,7 @@ export function TechnicianApp() {
       return;
     }
     await postJson("/api/field/action", body);
-    setStatus("Written to the immutable audit log.");
+    setStatus(successMessage ?? "Written to the immutable audit log.");
   }
 
   return (
@@ -98,8 +106,9 @@ export function TechnicianApp() {
               Drive to {assigned.address}. The resident sees this same van on their map.
             </div>
           </div>
-          {crew ? (
-            <div className="mt-3">
+          {/* Hero: map on the left, site card on the right — stacked on phones. */}
+          <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 md:items-start">
+            {crew ? (
               <TrackLiveMap
                 incident={assigned}
                 crew={crew}
@@ -109,31 +118,37 @@ export function TechnicianApp() {
                 )}
                 perspective="technician"
               />
-            </div>
-          ) : null}
-          <JobCard
-            incident={assigned}
-            crew={crew}
-            notes={notes}
-            serial={serial}
-            signature={signature}
-            onNotes={setNotes}
-            onSerial={setSerial}
-            onSignature={setSignature}
-            onOnSite={() =>
-              act({ action: "onsite", kind: "outage", targetId: assigned.id })
-            }
-            onComplete={() =>
-              act({
-                action: "complete",
-                kind: "outage",
-                targetId: assigned.id,
-                notes,
-                serialNumber: serial,
-                dataUri: signature,
-              })
-            }
-          />
+            ) : null}
+            <JobCard
+              incident={assigned}
+              crew={crew}
+              notes={notes}
+              serial={serial}
+              signature={signature}
+              onNotes={setNotes}
+              onSerial={setSerial}
+              onSignature={setSignature}
+              photo={photo}
+              onPhoto={setPhoto}
+              onOnSite={() =>
+                act({ action: "onsite", kind: "outage", targetId: assigned.id })
+              }
+              onComplete={() =>
+                act(
+                  {
+                    action: "complete",
+                    kind: "outage",
+                    targetId: assigned.id,
+                    notes,
+                    serialNumber: serial,
+                    dataUri: signature,
+                    repairPhoto: photo ? repairPhotoMeta(photo) : undefined,
+                  },
+                  photo ? "Repair evidence uploaded successfully." : undefined,
+                )
+              }
+            />
+          </div>
         </>
       ) : (
         <div className="mt-4 space-y-2">
@@ -192,9 +207,11 @@ function JobCard({
   notes,
   serial,
   signature,
+  photo,
   onNotes,
   onSerial,
   onSignature,
+  onPhoto,
   onOnSite,
   onComplete,
 }: {
@@ -203,9 +220,11 @@ function JobCard({
   notes: string;
   serial: string;
   signature: string | null;
+  photo: RepairPhoto | null;
   onNotes: (v: string) => void;
   onSerial: (v: string) => void;
   onSignature: (v: string) => void;
+  onPhoto: (photo: RepairPhoto | null) => void;
   onOnSite: () => void;
   onComplete: () => void;
 }) {
@@ -213,7 +232,7 @@ function JobCard({
     ? navigateUrl(crew.location, incident.location)
     : `https://www.google.com/maps/dir/?api=1&destination=${incident.location.lat},${incident.location.lon}&travelmode=driving`;
   return (
-    <div className="mt-4 rounded-xl border border-border bg-card p-4">
+    <div className="rounded-xl border border-border bg-card p-4">
       <div className="font-mono text-xs">{incident.reference}</div>
       <div className="mt-1 text-base font-semibold">{incident.address}</div>
       <div className="text-muted-foreground mt-1 text-xs">
@@ -243,6 +262,7 @@ function JobCard({
           <Input className="mt-1" value={serial} onChange={(e) => onSerial(e.target.value)} />
         </label>
         <SignPad onChange={onSignature} value={signature} />
+        <RepairEvidence value={photo} onChange={onPhoto} />
         <Button
           variant="outline"
           onClick={() =>
@@ -326,3 +346,100 @@ function SignPad({
     </label>
   );
 }
+
+function RepairEvidence({
+  onChange,
+  value,
+}: {
+  onChange: (photo: RepairPhoto | null) => void;
+  value: RepairPhoto | null;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+
+  function chosen(file: File | undefined) {
+    if (!file) return;
+    const problem = repairPhotoError(file);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setError(null);
+    setReading(true);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setReading(false);
+      const dataUri = reader.result;
+      if (typeof dataUri === "string") {
+        onChange({ dataUri, name: file.name, type: file.type, bytes: file.size });
+      } else {
+        setError("That photo could not be read. Try another one.");
+      }
+    };
+    reader.onerror = () => {
+      setReading(false);
+      setError("That photo could not be read. Try another one.");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="text-muted-foreground text-[11px]">
+      <span className="block">Repair evidence</span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={REPAIR_PHOTO_ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          chosen(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+      {value ? (
+        <div className="mt-1 flex flex-col gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={value.dataUri}
+            alt="Repair evidence preview"
+            className="h-24 w-full rounded-md object-cover ring-1 ring-border"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={reading}
+              onClick={() => inputRef.current?.click()}
+            >
+              Change photo
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setError(null);
+                onChange(null);
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-1 w-full"
+          disabled={reading}
+          onClick={() => inputRef.current?.click()}
+        >
+          <Camera className="size-3.5" />
+          {reading ? "Reading photo…" : "Upload photo"}
+        </Button>
+      )}
+      {error ? <p className="text-destructive mt-1">{error}</p> : null}
+    </div>
+  );
+}
+

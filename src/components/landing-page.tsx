@@ -2,9 +2,11 @@
 
 import { BrandLogo } from "@/components/brand-logo";
 import { CityscapeBackdrop } from "@/components/cityscape";
+import { SiteHeader } from "@/components/site-header";
 import { useSession } from "@/lib/use-session";
 import { go } from "@/lib/hard-nav";
 import { cn } from "@/lib/utils";
+import unionBuildingHero from "@/Assets/Image/Union-Building-LandingPage.jpeg";
 
 export function LandingPage() {
   const { persona, ready } = useSession();
@@ -12,75 +14,14 @@ export function LandingPage() {
 
   return (
     <div className="min-h-dvh bg-white">
-      <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4">
-          <a
-            href="/"
-            onClick={(e) => {
-              e.preventDefault();
-              go("/");
-            }}
-            className="shrink-0"
-          >
-            <BrandLogo compact byline={null} />
-          </a>
-          <nav className="hidden items-center gap-6 text-sm font-medium text-[#374151] md:flex">
-            <a href="#how" className="hover:text-[#24A148]">
-              How it works
-            </a>
-            <a
-              href="/resident/track"
-              onClick={(e) => {
-                e.preventDefault();
-                go(signedIn ? "/resident/track" : "/login?next=/resident/track");
-              }}
-              className="hover:text-[#24A148]"
-            >
-              Track a report
-            </a>
-            <a
-              href="/login?staff=1"
-              onClick={(e) => {
-                e.preventDefault();
-                go("/login?staff=1");
-              }}
-              className="hover:text-[#24A148]"
-            >
-              Municipal staff
-            </a>
-          </nav>
-          <div className="flex items-center gap-2">
-            {signedIn ? (
-              <button
-                type="button"
-                onClick={() => go(persona!.home)}
-                className="inline-flex h-10 items-center rounded-xl bg-[#24A148] px-4 text-sm font-semibold text-white hover:bg-[#1e8a3c]"
-              >
-                Open dashboard
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => go("/login")}
-                  className="hidden h-10 items-center rounded-xl px-3 text-sm font-semibold text-[#121417] hover:bg-[#F3F5F4] sm:inline-flex"
-                >
-                  Login
-                </button>
-                <button
-                  type="button"
-                  onClick={() => go("/register")}
-                  className="inline-flex h-10 items-center rounded-xl bg-[#24A148] px-4 text-sm font-semibold text-white hover:bg-[#1e8a3c]"
-                >
-                  Register
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
+      <SiteHeader />
 
-      <CityscapeBackdrop dim={false} className="min-h-[72vh] md:min-h-[78vh]">
+      <CityscapeBackdrop
+        dim={false}
+        src={unionBuildingHero.src}
+        alt="Union Buildings, Pretoria — City of Tshwane"
+        className="min-h-[72vh] md:min-h-[78vh]"
+      >
         <div className="hero-scrim relative flex min-h-[72vh] flex-col items-center justify-center px-4 py-20 text-center md:min-h-[78vh]">
           <p className="text-xs font-semibold tracking-[0.28em] text-white/80 uppercase">
             City of Tshwane Electricity

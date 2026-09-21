@@ -110,15 +110,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="px-4 py-4 text-sm">
-          <div className="flex items-center gap-3 rounded-xl bg-white/10 px-3 py-2.5">
-            <div className="flex size-9 items-center justify-center rounded-full bg-white text-xs font-bold text-[#24A148]">
-              {initials}
+          {persona.role === "technician" ? null : (
+            <div className="flex items-center gap-3 rounded-xl bg-white/10 px-3 py-2.5">
+              <div className="flex size-9 items-center justify-center rounded-full bg-white text-xs font-bold text-[#24A148]">
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate font-semibold">{persona.name}</div>
+                <div className="truncate text-[11px] text-white/75">{persona.email}</div>
+              </div>
             </div>
-            <div className="min-w-0">
-              <div className="truncate font-semibold">{persona.name}</div>
-              <div className="truncate text-[11px] text-white/75">{persona.email}</div>
-            </div>
-          </div>
+          )}
           {showRoi ? (
             <div className="mt-3 rounded-xl bg-white/10 px-3 py-2">
               <div className="text-[11px] tracking-wide text-white/70 uppercase">
