@@ -4,7 +4,8 @@ This file is the user catalogue **as the code defines it**, not a marketing org 
 Sources: `src/lib/types.ts`, `src/lib/seed.ts`, `src/lib/session.ts`, `src/lib/store.ts`, `navForRole`, and the four role UIs.
 
 Sign-in password: **`electroraid`**.  
-Session key: `electroraid.session` in `localStorage`.
+Session key: `electroraid.session` in `localStorage`.  
+Brand green: **`#24A148`**. Logo: green house under a leafy arch on every header, modal, and sidebar.
 
 ---
 
@@ -46,7 +47,7 @@ These rows sit in `store.users` after boot.
 
 ## 3. Sign-in accounts
 
-`PERSONAS` in `src/lib/session.ts` — four cards on `/login`.
+`PERSONAS` in `src/lib/session.ts` — landing page at `/`, login modal at `/login`, register at `/register`, proof of residence at `/verify`.
 
 ### 3.1 Sibusiso Mabena — resident
 
@@ -56,7 +57,7 @@ These rows sit in `store.users` after boot.
 | `home` | `/resident` |
 | `suburb` | Mamelodi |
 | `accountNumber` | `3218840441` (meter `mtr_healthy_mam`) |
-| Nav | **My supply** only |
+| Nav | **Dashboard**, **Report Outage**, **Track Reports**, **Notifications**, **Settings** |
 
 **What the code lets him do**
 
@@ -204,7 +205,7 @@ The diary on `/audit` turns these into sentences (`src/lib/audit-copy.ts`).
 These are **accounts on the grid**, not `User` rows:
 
 | Meter id | Account | Household name | Notes |
-| --- | --- | --- | --- |
+| --- | --- | --- |
 | `mtr_healthy_mam` | 3218840441 | S. Mabena | Sibusiso’s prepaid — buys units (not an Izinyoka flag) |
 | `mtr_silent_mam` | 3218841907 | M. Radebe | 0 kWh for 87 days, feeder ENERGIZED — anomaly scan target |
 | `mtr_dark_hat` | 3081120091 | A. Naidoo | Hatfield, feeder DEENERGIZED — should **not** flag |

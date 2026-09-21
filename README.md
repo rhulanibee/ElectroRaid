@@ -11,16 +11,18 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:43147](http://localhost:43147) and sign in as one of the seeded staff accounts (password `electroraid`):
+Open [http://localhost:43147](http://localhost:43147). The landing page follows the household flow: **Report → Login / Register → proof of residence → dashboard → live tracking**.
 
-| Person | Role | Lands on |
+Sign-in password for seeded accounts: `electroraid`.
+
+| Person | How to sign in | Lands on |
 | --- | --- | --- |
-| Sibusiso Mabena | Resident | `/resident` — report a fault, live-track the technician, confirm restore |
-| Thandiwe Nkosi | Dispatcher | `/ops` — assign a named technician; the job lands on that handset immediately |
-| Sipho Dlamini | Field technician | `/tech` — assigned jobs appear the moment control room dispatches you |
-| Nomsa Khumalo | Revenue investigator | `/inspect` — zero-kWh audits and repair QA |
+| Sibusiso Mabena | Account `3218840441` or **Sign in with Google** | `/resident` — dashboard, report, live-track, confirm restore |
+| Thandiwe Nkosi | Login → Municipal staff, or email `t.nkosi@tshwane.gov.za` | `/ops` — assign a named technician |
+| Sipho Dlamini | Login → Municipal staff, or email `s.dlamini@tshwane.gov.za` | `/tech` — assigned jobs appear immediately |
+| Nomsa Khumalo | Login → Municipal staff, or email `n.khumalo@tshwane.gov.za` | `/inspect` — zero-kWh audits and repair QA |
 
-Use **Switch user** in the sidebar to change role.
+New residents can **Register**, upload proof of residence, then use the green sidebar (Dashboard, Report Outage, Track Reports, Notifications, Settings).
 
 ## What is running
 

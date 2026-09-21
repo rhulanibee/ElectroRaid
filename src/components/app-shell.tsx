@@ -1,16 +1,30 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Activity, LogOut } from "lucide-react";
+import {
+  Activity,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  TrendingUp,
+  Wrench,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePlatform } from "@/lib/use-platform";
 import { formatZar } from "@/lib/format";
 import { useEffect, useState } from "react";
 import { useSession } from "@/lib/use-session";
-import { navForRole } from "@/lib/session";
-import { Button } from "@/components/ui/button";
+import { navForRole, navItemActive } from "@/lib/session";
 import { go, goReplace } from "@/lib/hard-nav";
-import { PRODUCT_BYLINE, PRODUCT_NAME } from "@/lib/brand";
+import { BrandLogo } from "@/components/brand-logo";
+
+const ICONS: Record<string, typeof LayoutDashboard> = {
+  "/ops": LayoutDashboard,
+  "/audit": ClipboardList,
+  "/analytics": TrendingUp,
+  "/tech": Wrench,
+  "/inspect": ClipboardList,
+};
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -49,7 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready || !persona) {
     return (
-      <div className="text-muted-foreground flex min-h-dvh items-center justify-center text-sm">
+      <div className="flex min-h-dvh items-center justify-center text-sm text-[#6B7280]">
         Opening your ElectroRaid workspace…
       </div>
     );
@@ -57,27 +71,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const nav = navForRole(persona.role);
   const showRoi = persona.role === "dispatcher" || persona.role === "executive";
+  const initials = persona.name
+    .split(" ")
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("");
 
   return (
-    <div className="flex min-h-dvh flex-col md:flex-row">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border/80 bg-sidebar md:flex">
-        <div className="border-b border-border/80 px-4 py-4">
-          <div className="text-[10px] tracking-[0.22em] text-primary uppercase">
-            City of Tshwane
-          </div>
-          <div className="font-heading mt-1 text-lg font-semibold tracking-tight">
-            {PRODUCT_NAME}
-          </div>
-          <div className="text-primary mt-0.5 text-[10px] tracking-[0.18em] uppercase">
-            {PRODUCT_BYLINE}
-          </div>
-          <div className="text-muted-foreground mt-2 text-xs leading-relaxed">
-            {persona.title}
-          </div>
+    <div className="flex min-h-dvh bg-[#F3F5F4]">
+      <aside className="hidden w-[248px] shrink-0 flex-col bg-[#24A148] text-white md:flex">
+        <div className="px-4 py-5">
+          <BrandLogo tone="white" byline="City of Tshwane" />
+          <div className="mt-3 text-xs leading-relaxed text-white/80">{persona.title}</div>
         </div>
-        <nav className="flex flex-1 flex-col gap-1 p-2">
+        <nav className="flex flex-1 flex-col gap-1 px-3">
           {nav.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const Icon = ICONS[item.href] ?? Activity;
+            const active = navItemActive(pathname, item.href);
             return (
               <a
                 key={item.href}
@@ -87,76 +97,84 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   go(item.href);
                 }}
                 className={cn(
-                  "rounded-lg px-3 py-2 text-sm transition-colors",
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition",
                   active
-                    ? "bg-primary/15 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    ? "bg-white text-[#24A148] shadow-sm"
+                    : "text-white/90 hover:bg-white/15",
                 )}
               >
+                <Icon className="size-4" />
                 {item.label}
               </a>
             );
           })}
         </nav>
-        <div className="border-t border-border/80 p-3 text-xs">
-          <div className="font-medium">{persona.name}</div>
-          <div className="text-muted-foreground">{persona.email}</div>
+        <div className="px-4 py-4 text-sm">
+          <div className="flex items-center gap-3 rounded-xl bg-white/10 px-3 py-2.5">
+            <div className="flex size-9 items-center justify-center rounded-full bg-white text-xs font-bold text-[#24A148]">
+              {initials}
+            </div>
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{persona.name}</div>
+              <div className="truncate text-[11px] text-white/75">{persona.email}</div>
+            </div>
+          </div>
           {showRoi ? (
-            <>
-              <div className="text-muted-foreground mt-3">Recovered this shift</div>
-              <div className="tabular text-gold mt-1 text-base font-semibold">
+            <div className="mt-3 rounded-xl bg-white/10 px-3 py-2">
+              <div className="text-[11px] tracking-wide text-white/70 uppercase">
+                Recovered this shift
+              </div>
+              <div className="tabular mt-0.5 text-base font-semibold">
                 {roi ? formatZar(roi.recoveredZar) : "—"}
               </div>
-            </>
+            </div>
           ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3 w-full"
+          <button
+            type="button"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/25 py-2 text-sm font-medium hover:bg-white/10"
             onClick={() => {
               logout();
-              go("/login");
+              go("/");
             }}
           >
             <LogOut className="size-3.5" />
-            Switch user
-          </Button>
+            Sign out
+          </button>
         </div>
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-border/80 px-3 py-2 md:px-5">
+        <header className="flex items-center justify-between gap-3 border-b border-[#E5E7EB] bg-white px-3 py-2.5 md:px-5">
           <div className="flex items-center gap-2 md:hidden">
-            <Activity className="text-primary size-4" />
-            <span className="font-heading text-sm font-semibold">{PRODUCT_NAME}</span>
+            <BrandLogo compact byline={null} />
           </div>
-          <div className="text-muted-foreground hidden min-w-0 truncate text-xs md:block">
-            Signed in as {persona.name} · {persona.title}
+          <div className="hidden min-w-0 truncate text-sm text-[#6B7280] md:block">
+            {persona.name} · {persona.title}
           </div>
           <div className="flex items-center gap-3 text-xs">
             <button
               type="button"
-              className="text-muted-foreground hover:text-foreground md:hidden"
+              className="text-[#6B7280] hover:text-[#121417] md:hidden"
               onClick={() => {
                 logout();
-                go("/login");
+                go("/");
               }}
             >
-              Switch
+              Sign out
             </button>
-            <span className="tabular text-muted-foreground">{clock}</span>
+            <span className="tabular text-[#6B7280]">{clock}</span>
             <span
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5",
+                "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium",
                 connected
-                  ? "border-primary/40 text-primary"
-                  : "border-destructive/40 text-destructive",
+                  ? "border-[#C6EBD3] bg-[#E8F6EC] text-[#167a34]"
+                  : "border-red-200 bg-red-50 text-red-700",
               )}
             >
               <span
                 className={cn(
                   "size-1.5 rounded-full",
-                  connected ? "bg-primary" : "bg-destructive",
+                  connected ? "bg-[#24A148]" : "bg-red-600",
                 )}
               />
               {connected ? "Live" : "Reconnecting"}
@@ -167,11 +185,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {nav.length > 1 ? (
-        <nav
-          className="bg-sidebar/95 sticky bottom-0 z-20 border-t border-border/80 md:hidden"
-          style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}
-        >
-          <div className="grid" style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
+        <nav className="sticky bottom-0 z-20 border-t border-[#E5E7EB] bg-white md:hidden">
+          <div
+            className="grid"
+            style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}
+          >
             {nav.map((item) => {
               const active = pathname === item.href;
               return (
@@ -183,8 +201,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     go(item.href);
                   }}
                   className={cn(
-                    "py-2 text-center text-[10px]",
-                    active ? "text-primary" : "text-muted-foreground",
+                    "py-2 text-center text-[10px] font-medium",
+                    active ? "text-[#24A148]" : "text-[#6B7280]",
                   )}
                 >
                   {item.label}
