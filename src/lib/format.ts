@@ -71,6 +71,8 @@ export function roleLabel(role: UserRole): string {
       return "Executive";
     case "resident":
       return "Resident";
+    case "admin":
+      return "Administrator";
     default:
       return "System";
   }

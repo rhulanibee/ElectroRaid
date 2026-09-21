@@ -8,6 +8,8 @@
  * The engines (spatial, anomaly, dispatch, audit, roi) stay unchanged.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import {
   investigationFromHit,
   nextInvestigationReference,
@@ -25,7 +27,7 @@ import {
 import { refreshIncidentPriority } from "./engines/priority";
 import { computeRoi } from "./engines/roi";
 import { ingestReport } from "./engines/spatial";
-import { distanceMetres, etaMinutes, lerpPoint } from "./geo";
+import { distanceMetres, etaMinutes, lerpPoint, pointForSuburb } from "./geo";
 import { hoursAgo, newId, nowIso } from "./id";
 import { seedPlatform } from "./seed";
 import type {
@@ -42,11 +44,30 @@ import type {
   PlatformSnapshot,
   PriorityWeights,
   RevenueInvestigation,
+  Specialization,
+  StaffProvision,
   User,
 } from "./types";
 import { DEFAULT_WEIGHTS } from "./types";
 
 const MAX_EVENTS = 80;
+const SEEDED_STAFF = new Set(["usr_thandiwe", "usr_sipho", "usr_nomsa"]);
+const LIVE_PATH = path.join(process.cwd(), "data", "live-floor.json");
+
+interface LiveFloorFile {
+  version: 1;
+  users: User[];
+  crews: FieldCrew[];
+  meters: PlatformSnapshot["meters"];
+  vending: PlatformSnapshot["vending"];
+  incidents: MasterIncident[];
+  reports: PlatformSnapshot["reports"];
+  investigations: RevenueInvestigation[];
+  audit: AuditLog[];
+  events: LiveEvent[];
+  provisioned: StaffProvision[];
+  removedIds: string[];
+}
 
 class ElectroRaidStore {
   users: User[] = [];
@@ -62,12 +83,22 @@ class ElectroRaidStore {
   weights: PriorityWeights = { ...DEFAULT_WEIGHTS };
   listeners = new Set<(event: LiveEvent, snapshot: PlatformSnapshot) => void>();
   private chaseTimers = new Map<string, ReturnType<typeof setInterval>>();
+  /** Staff the administrator added. Re-applied after a floor reset. */
+  private provisioned: StaffProvision[] = [];
+  /** Sign-in accounts the administrator removed. */
+  private removedIds: string[] = [];
+
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    this.reset();
+    this.hydrate(true);
   }
 
   reset() {
+    this.hydrate(false);
+  }
+
+  private hydrate(restore: boolean) {
     this.stopAllChases();
     const seeded = seedPlatform();
     this.users = seeded.users;
@@ -81,12 +112,24 @@ class ElectroRaidStore {
     this.audit = seeded.audit;
     this.events = seeded.events;
     this.weights = { ...DEFAULT_WEIGHTS };
-    this.emit({
-      type: "platform.reset",
-      title: "Ops floor reset",
-      detail: "Baseline Tshwane grid state loaded for the prototype.",
-      severity: "info",
-    });
+    this.provisioned = [];
+    this.removedIds = [];
+    if (restore) this.readLive();
+    else this.deleteLive();
+    for (const person of this.provisioned) {
+      this.insertStaff(person, false);
+    }
+    this.emit(
+      {
+        type: "platform.reset",
+        title: restore ? "Live floor ready" : "Floor cleared",
+        detail: restore
+          ? "Sign-in accounts loaded. Tickets are only the ones people have filed."
+          : "Sign-in accounts kept. Filed tickets were cleared.",
+        severity: "info",
+      },
+      false,
+    );
     this.bootChases();
   }
 
@@ -820,6 +863,153 @@ class ElectroRaidStore {
     }
     const snapshot = this.snapshot();
     for (const fn of this.listeners) fn(live, snapshot);
+    this.scheduleSave();
+  }
+
+  updateHousehold(input: {
+    userId: string;
+    fullName: string;
+    email: string;
+    phone: string | null;
+    suburb: string;
+    address: string;
+    accountNumber: string | null;
+  }) {
+    const idx = this.users.findIndex((user) => user.id === input.userId);
+    if (idx >= 0) {
+      this.users[idx] = {
+        ...this.users[idx],
+        fullName: input.fullName,
+        email: input.email,
+        phone: input.phone,
+      };
+    }
+    if (input.accountNumber) {
+      const location = pointForSuburb(input.suburb);
+      this.meters = this.meters.map((meter) =>
+        meter.accountNumber === input.accountNumber
+          ? {
+              ...meter,
+              householdName: input.fullName,
+              address: input.address || meter.address,
+              suburb: input.suburb || meter.suburb,
+              location,
+            }
+          : meter,
+      );
+    }
+    this.recordAudit({
+      actorId: input.userId,
+      actorRole: "resident",
+      actionType: "RESIDENT_UPDATED_PROFILE",
+      entityType: "user",
+      entityId: input.userId,
+      location: null,
+      payload: {
+        fullName: input.fullName,
+        email: input.email,
+        phone: input.phone,
+        suburb: input.suburb,
+        address: input.address,
+      },
+    });
+    this.emit({
+      type: "resident.profile",
+      title: `${input.fullName} updated household details`,
+      detail: input.address || input.suburb,
+      severity: "info",
+      entityType: "user",
+      entityId: input.userId,
+    });
+  }
+
+  private scheduleSave() {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.writeLive();
+    }, 400);
+  }
+
+  private writeLive() {
+    const body: LiveFloorFile = {
+      version: 1,
+      users: this.users,
+      crews: this.crews,
+      meters: this.meters,
+      vending: this.vending,
+      incidents: this.incidents,
+      reports: this.reports,
+      investigations: this.investigations,
+      audit: this.audit,
+      events: this.events,
+      provisioned: this.provisioned,
+      removedIds: this.removedIds,
+    };
+    try {
+      fs.mkdirSync(path.dirname(LIVE_PATH), { recursive: true });
+      fs.writeFileSync(LIVE_PATH, JSON.stringify(body));
+    } catch {
+      /* the in-memory floor still serves this process */
+    }
+  }
+
+  private readLive() {
+    try {
+      if (!fs.existsSync(LIVE_PATH)) return;
+      const live = JSON.parse(fs.readFileSync(LIVE_PATH, "utf8")) as LiveFloorFile;
+      if (!live || live.version !== 1) return;
+      const removed = new Set(live.removedIds ?? []);
+      this.removedIds = [...removed];
+      for (const user of live.users ?? []) {
+        if (removed.has(user.id)) continue;
+        const idx = this.users.findIndex((row) => row.id === user.id);
+        if (idx >= 0) {
+          this.users[idx] = {
+            ...this.users[idx],
+            fullName: user.fullName,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+            isActive: user.isActive,
+          };
+        } else if (user.role !== "system") {
+          this.users.push(user);
+        }
+      }
+      this.users = this.users.filter((user) => !removed.has(user.id));
+      if (Array.isArray(live.crews)) {
+        const liveCrewIds = new Set(live.crews.map((crew) => crew.id));
+        this.crews = this.crews.filter((crew) => liveCrewIds.has(crew.id));
+        for (const crew of live.crews) {
+          if (removed.has(crew.userId)) continue;
+          const idx = this.crews.findIndex((row) => row.id === crew.id);
+          if (idx >= 0) this.crews[idx] = crew;
+          else this.crews.push(crew);
+        }
+      }
+      this.crews = this.crews.filter((crew) => !removed.has(crew.userId));
+      const meters = new Map(this.meters.map((meter) => [meter.id, meter]));
+      for (const meter of live.meters ?? []) meters.set(meter.id, meter);
+      this.meters = [...meters.values()];
+      this.vending = live.vending ?? [];
+      this.incidents = live.incidents ?? [];
+      this.reports = live.reports ?? [];
+      this.investigations = live.investigations ?? [];
+      this.audit = live.audit ?? [];
+      this.events = live.events ?? [];
+      this.provisioned = live.provisioned ?? [];
+    } catch {
+      /* keep the sign-in floor if the file is unreadable */
+    }
+  }
+
+  private deleteLive() {
+    try {
+      fs.unlinkSync(LIVE_PATH);
+    } catch {
+      /* already absent */
+    }
   }
 
   private bootChases() {
@@ -910,6 +1100,279 @@ class ElectroRaidStore {
     for (const id of this.chaseTimers.keys()) this.stopChase(id);
   }
 
+  ensureStaff(people: StaffProvision[]) {
+    const created: StaffProvision[] = [];
+    let changed = false;
+    for (const person of people) {
+      if (!person.id || !person.fullName || !person.role) continue;
+      if (this.removedIds.includes(person.id)) continue;
+      const existing = this.users.find((user) => user.id === person.id);
+      if (existing) {
+        if (this.applyStaffUpdate(person)) changed = true;
+      } else {
+        const added = this.insertStaff(person, true);
+        if (added) created.push(person);
+      }
+      if (!SEEDED_STAFF.has(person.id)) {
+        const idx = this.provisioned.findIndex((row) => row.id === person.id);
+        if (idx >= 0) this.provisioned[idx] = person;
+        else this.provisioned.push(person);
+      }
+    }
+    if (changed) this.scheduleSave();
+    return created;
+  }
+
+  removeStaff(ids: string[]) {
+    const removed: string[] = [];
+    for (const id of ids) {
+      if (id === "usr_system" || id === "usr_sibusiso" || id === "usr_admin") continue;
+      const user = this.users.find((row) => row.id === id);
+      if (
+        user &&
+        user.role !== "technician" &&
+        user.role !== "dispatcher" &&
+        user.role !== "revenue_inspector"
+      ) {
+        continue;
+      }
+      if (user) this.detachStaff(id);
+      this.users = this.users.filter((row) => row.id !== id);
+      this.provisioned = this.provisioned.filter((row) => row.id !== id);
+      if (!this.removedIds.includes(id)) this.removedIds.push(id);
+      removed.push(id);
+      if (user) {
+        this.recordAudit({
+          actorId: this.systemUser().id,
+          actorRole: "admin",
+          actionType: "ADMIN_REMOVED_STAFF",
+          entityType: "user",
+          entityId: id,
+          location: null,
+          payload: { fullName: user.fullName, role: user.role },
+        });
+        const label =
+          user.role === "technician"
+            ? "Technician"
+            : user.role === "revenue_inspector"
+              ? "Inspector"
+              : "Dispatcher";
+        this.emit({
+          type: "staff.removed",
+          title: `${label} ${user.fullName} removed`,
+          detail: "Their sign-in and crew assignment were withdrawn.",
+          severity: "warn",
+          entityType: "user",
+          entityId: id,
+        });
+      }
+    }
+    if (removed.length) this.scheduleSave();
+    return removed;
+  }
+
+  private applyStaffUpdate(person: StaffProvision) {
+    const idx = this.users.findIndex((user) => user.id === person.id);
+    if (idx < 0) return false;
+    const current = this.users[idx];
+    const allowed =
+      person.role === "technician" ||
+      person.role === "dispatcher" ||
+      person.role === "revenue_inspector";
+    if (!allowed) return false;
+    const crew = this.crews.find((row) => row.userId === person.id);
+    const nextSpec: Specialization =
+      person.role === "revenue_inspector" ? "revenue_protection" : "maintenance";
+    const profileSame =
+      current.fullName === person.fullName &&
+      current.email === person.email &&
+      (current.phone ?? null) === (person.phone ?? null) &&
+      current.role === person.role;
+    const crewSame =
+      person.role === "dispatcher"
+        ? !crew
+        : Boolean(
+            crew &&
+              crew.callsign === (person.callsign || crew.callsign) &&
+              crew.specialization === nextSpec &&
+              crew.id === person.crewId,
+          );
+    const same = profileSame && crewSame;
+    this.users[idx] = {
+      ...current,
+      fullName: person.fullName,
+      email: person.email,
+      phone: person.phone,
+      role: person.role,
+      isActive: true,
+    };
+    this.syncCrew(person);
+    return !same;
+  }
+
+  private syncCrew(person: StaffProvision) {
+    if (person.role === "dispatcher") {
+      this.detachStaff(person.id);
+      return;
+    }
+    if (!person.crewId) return;
+    const specialization: Specialization =
+      person.role === "revenue_inspector" ? "revenue_protection" : "maintenance";
+    const others = this.crews.filter(
+      (crew) => crew.userId === person.id && crew.id !== person.crewId,
+    );
+    for (const crew of others) this.pullCrewOffJobs(crew.id);
+    this.crews = this.crews.filter(
+      (crew) => crew.userId !== person.id || crew.id === person.crewId,
+    );
+    const idx = this.crews.findIndex((crew) => crew.id === person.crewId);
+    if (idx >= 0) {
+      this.crews[idx] = {
+        ...this.crews[idx],
+        userId: person.id,
+        callsign: person.callsign || this.crews[idx].callsign,
+        specialization,
+      };
+      return;
+    }
+    this.crews.push({
+      id: person.crewId,
+      userId: person.id,
+      callsign: person.callsign || (person.role === "technician" ? "MT-NEW" : "RP-NEW"),
+      specialization,
+      skillCertifications:
+        person.role === "revenue_inspector"
+          ? ["METER_AUDIT", "SEAL_CHECK"]
+          : ["LV_BOARD", "OHL_REPAIR"],
+      status: "available",
+      location: { lon: 28.1881, lat: -25.7461 },
+      vehicleReg: `CT ${100 + this.crews.length} GP`,
+      activeQueueSize: 0,
+      lastGpsAt: nowIso(),
+    });
+  }
+
+  private detachStaff(userId: string) {
+    const crews = this.crews.filter((crew) => crew.userId === userId);
+    for (const crew of crews) this.pullCrewOffJobs(crew.id);
+    this.crews = this.crews.filter((crew) => crew.userId !== userId);
+  }
+
+  private pullCrewOffJobs(crewId: string) {
+    this.stopChase(crewId);
+    const now = nowIso();
+    this.incidents = this.incidents.map((incident) => {
+      if (incident.assignedCrewId !== crewId) return incident;
+      if (incident.status === "resolved" || incident.status === "closed") return incident;
+      return {
+        ...incident,
+        assignedCrewId: null,
+        status: "open" as const,
+        dispatchedAt: null,
+        onSiteAt: null,
+        lastActivityAt: now,
+      };
+    });
+    this.investigations = this.investigations.map((investigation) => {
+      if (investigation.assignedCrewId !== crewId) return investigation;
+      if (
+        investigation.status === "closed_recovered" ||
+        investigation.status === "closed_no_finding"
+      ) {
+        return investigation;
+      }
+      return {
+        ...investigation,
+        assignedCrewId: null,
+        status: "flagged" as const,
+        dispatchedAt: null,
+        onSiteAt: null,
+      };
+    });
+  }
+
+  private insertStaff(person: StaffProvision, announce: boolean) {
+    const allowed =
+      person.role === "technician" ||
+      person.role === "dispatcher" ||
+      person.role === "revenue_inspector";
+    if (!allowed) return false;
+
+    let added = false;
+    if (!this.users.some((user) => user.id === person.id)) {
+      this.users.push({
+        id: person.id,
+        employeeNo: null,
+        fullName: person.fullName,
+        email: person.email,
+        phone: person.phone,
+        role: person.role,
+        isActive: true,
+        createdAt: nowIso(),
+      });
+      added = true;
+    }
+
+    if (person.role !== "dispatcher" && person.crewId) {
+      if (!this.crews.some((crew) => crew.id === person.crewId)) {
+        const specialization: Specialization =
+          person.role === "revenue_inspector"
+            ? "revenue_protection"
+            : "maintenance";
+        this.crews.push({
+          id: person.crewId,
+          userId: person.id,
+          callsign: person.callsign || (person.role === "technician" ? "MT-NEW" : "RP-NEW"),
+          specialization,
+          skillCertifications:
+            person.role === "revenue_inspector"
+              ? ["METER_AUDIT", "SEAL_CHECK"]
+              : ["LV_BOARD", "OHL_REPAIR"],
+          status: "available",
+          location: { lon: 28.1881, lat: -25.7461 },
+          vehicleReg: `CT ${100 + this.crews.length} GP`,
+          activeQueueSize: 0,
+          lastGpsAt: nowIso(),
+        });
+        added = true;
+      }
+    }
+
+    if (added && announce) {
+      this.recordAudit({
+        actorId: this.systemUser().id,
+        actorRole: "admin",
+        actionType: "ADMIN_ADDED_STAFF",
+        entityType: "user",
+        entityId: person.id,
+        location: null,
+        payload: {
+          fullName: person.fullName,
+          role: person.role,
+          callsign: person.callsign,
+          username: person.email,
+        },
+      });
+      const label =
+        person.role === "technician"
+          ? "Technician"
+          : person.role === "revenue_inspector"
+            ? "Inspector"
+            : "Dispatcher";
+      this.emit({
+        type: "staff.added",
+        title: `${label} ${person.fullName} added`,
+        detail: person.callsign
+          ? `${person.callsign} can sign in as ${person.email}`
+          : `${person.fullName} can sign in as ${person.email}`,
+        severity: "info",
+        entityType: "user",
+        entityId: person.id,
+      });
+    }
+    return added;
+  }
+
   private releaseCrew(
     crewId: string,
     except?: { kind: JobKind; targetId: string },
@@ -941,13 +1404,13 @@ class ElectroRaidStore {
   }
 }
 
-const globalForStore = globalThis as unknown as { __electroraid_v2?: ElectroRaidStore };
+const globalForStore = globalThis as unknown as { __electroraid_v4?: ElectroRaidStore };
 
 export function getStore(): ElectroRaidStore {
-  if (!globalForStore.__electroraid_v2) {
-    globalForStore.__electroraid_v2 = new ElectroRaidStore();
+  if (!globalForStore.__electroraid_v4) {
+    globalForStore.__electroraid_v4 = new ElectroRaidStore();
   }
-  return globalForStore.__electroraid_v2;
+  return globalForStore.__electroraid_v4;
 }
 
 export { hoursAgo };

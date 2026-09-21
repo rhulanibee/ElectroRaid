@@ -1,8 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import type { LiveEvent, PlatformSnapshot } from "@/lib/types";
 import type { RoiMetrics } from "@/lib/engines/roi";
+import { syncLocalStaff } from "@/lib/staff";
+import type { LiveEvent, PlatformSnapshot } from "@/lib/types";
 
 export interface PlatformState {
   snapshot: PlatformSnapshot | null;
@@ -33,6 +34,9 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
     async function bootstrap() {
       try {
+        await syncLocalStaff().catch(() => {
+          /* staff directory is reapplied on the next successful sync */
+        });
         const res = await fetch("/api/state", { cache: "no-store" });
         const data = await res.json();
         if (cancelled) return;

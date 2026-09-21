@@ -1,8 +1,17 @@
 import type { UserRole } from "./types";
 
 export const SIGNIN_PASSWORD = "electroraid";
+export const ADMIN_USERNAME = "admin";
+export const ADMIN_PASSWORD = "Admin123";
 export const SESSION_KEY = "electroraid.session";
 export const REGISTERED_KEY = "electroraid.registered";
+export const PROFILE_KEY = "electroraid.profiles";
+export const STAFF_REMOVED_KEY = "electroraid.staff.removed";
+export const STAFF_OVERRIDE_KEY = "electroraid.staff.overrides";
+
+const SEEDED_PASSWORDS: Record<string, string> = {
+  usr_admin: ADMIN_PASSWORD,
+};
 
 export interface DemoPersona {
   id: string;
@@ -15,8 +24,10 @@ export interface DemoPersona {
   phone?: string;
   home: string;
   suburb?: string;
+  address?: string;
   accountNumber?: string;
   crewId?: string;
+  callsign?: string;
   verified?: boolean;
   blurb: string;
   duties: string[];
@@ -49,6 +60,7 @@ export const PERSONAS: DemoPersona[] = [
     phone: "+27 82 441 0190",
     home: "/resident",
     suburb: "Mamelodi",
+    address: "12 Tsamaya Road, Mamelodi Ext 11",
     accountNumber: "3218840441",
     verified: true,
     blurb:
@@ -99,7 +111,137 @@ export const PERSONAS: DemoPersona[] = [
       "Zero-kWh audits, seal checks, digital tamper fines, and quality-assurance scores on what the technician repaired.",
     duties: ["Meter audit", "Izinyoka", "Repair QA"],
   },
+  {
+    id: "usr_admin",
+    name: "Admin",
+    firstName: "Admin",
+    role: "admin",
+    title: "Municipal administrator",
+    email: ADMIN_USERNAME,
+    home: "/admin",
+    verified: true,
+    blurb:
+      "Add dispatchers, field technicians, and revenue-protection inspectors.",
+    duties: ["Add dispatcher", "Add technician", "Add inspector"],
+  },
 ];
+
+export interface ProfilePatch {
+  firstName: string;
+  lastName: string;
+  name: string;
+  email: string;
+  phone?: string;
+  suburb?: string;
+  address?: string;
+  title?: string;
+}
+
+export function loadProfiles(): Record<string, ProfilePatch> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, ProfilePatch>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveProfile(id: string, patch: ProfilePatch) {
+  const all = loadProfiles();
+  all[id] = patch;
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(all));
+}
+
+export interface StaffOverride {
+  firstName: string;
+  lastName: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: UserRole;
+  title: string;
+  home: string;
+  callsign?: string;
+  crewId?: string;
+  password?: string;
+}
+
+export function loadStaffRemoved(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STAFF_REMOVED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveStaffRemoved(ids: string[]) {
+  localStorage.setItem(STAFF_REMOVED_KEY, JSON.stringify([...new Set(ids)]));
+}
+
+export function loadStaffOverrides(): Record<string, StaffOverride> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(STAFF_OVERRIDE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, StaffOverride>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveStaffOverride(id: string, patch: StaffOverride) {
+  const all = loadStaffOverrides();
+  all[id] = patch;
+  localStorage.setItem(STAFF_OVERRIDE_KEY, JSON.stringify(all));
+}
+
+export function clearStaffOverride(id: string) {
+  const all = loadStaffOverrides();
+  delete all[id];
+  localStorage.setItem(STAFF_OVERRIDE_KEY, JSON.stringify(all));
+}
+
+/** Built-in municipal staff after an admin edit or removal. Null means removed. */
+export function presentStaff(persona: DemoPersona): DemoPersona | null {
+  if (loadStaffRemoved().includes(persona.id)) return null;
+  const patch = loadStaffOverrides()[persona.id];
+  if (!patch) return persona;
+  return {
+    ...persona,
+    ...patch,
+    id: persona.id,
+    accountNumber: persona.accountNumber,
+    verified: persona.verified,
+    blurb: persona.blurb,
+    duties: persona.duties,
+  };
+}
+
+/** Editable household fields saved on this device. Account number stays fixed. */
+export function withProfile(persona: DemoPersona): DemoPersona {
+  const patch = loadProfiles()[persona.id];
+  if (!patch) return persona;
+  return {
+    ...persona,
+    ...patch,
+    id: persona.id,
+    role: persona.role,
+    home: persona.home,
+    accountNumber: persona.accountNumber,
+    crewId: persona.crewId,
+    verified: persona.verified,
+  };
+}
 
 export function loadRegistered(): StoredResident[] {
   if (typeof window === "undefined") return [];
@@ -119,24 +261,34 @@ export function saveRegistered(rows: StoredResident[]) {
 
 export function personaById(id: string): DemoPersona | undefined {
   const seeded = PERSONAS.find((p) => p.id === id);
-  if (seeded) return seeded;
-  return loadRegistered().find((r) => r.persona.id === id)?.persona;
+  if (seeded) {
+    const staff = presentStaff(seeded);
+    return staff ? withProfile(staff) : undefined;
+  }
+  if (loadStaffRemoved().includes(id)) return undefined;
+  const registered = loadRegistered().find((r) => r.persona.id === id)?.persona;
+  return registered ? withProfile(registered) : undefined;
 }
 
 export function personaByEmail(email: string): DemoPersona | undefined {
   const needle = email.trim().toLowerCase();
-  const seeded = PERSONAS.find((p) => p.email.toLowerCase() === needle);
+  const seeded = PERSONAS.map(presentStaff)
+    .filter((p): p is DemoPersona => Boolean(p))
+    .map(withProfile)
+    .find((p) => p.email.toLowerCase() === needle);
   if (seeded) return seeded;
-  return loadRegistered().find((r) => r.persona.email.toLowerCase() === needle)
-    ?.persona;
+  return loadRegistered()
+    .map((r) => withProfile(r.persona))
+    .find((p) => p.email.toLowerCase() === needle);
 }
 
 export function personaByAccount(account: string): DemoPersona | undefined {
   const needle = account.trim();
-  const seeded = PERSONAS.find((p) => p.accountNumber === needle);
+  const seeded = PERSONAS.map(withProfile).find((p) => p.accountNumber === needle);
   if (seeded) return seeded;
-  return loadRegistered().find((r) => r.persona.accountNumber === needle)
-    ?.persona;
+  return loadRegistered()
+    .map((r) => withProfile(r.persona))
+    .find((p) => p.accountNumber === needle);
 }
 
 function normalizeId(value: string) {
@@ -151,15 +303,23 @@ export function findSignIn(identifier: string): StoredResident | undefined {
     (account ? normalizeId(account) === needle : false) ||
     (name ? name.toLowerCase() === needle : false);
 
-  const seeded = PERSONAS.find((p) =>
-    matches(p.email, p.accountNumber, p.name),
-  );
-  if (seeded) {
-    return { persona: seeded, password: SIGNIN_PASSWORD };
+  for (const base of PERSONAS) {
+    const staff = presentStaff(base);
+    if (!staff) continue;
+    const persona = withProfile(staff);
+    if (!matches(persona.email, persona.accountNumber, persona.name)) continue;
+    const override = loadStaffOverrides()[base.id];
+    return {
+      persona,
+      password: override?.password ?? SEEDED_PASSWORDS[base.id] ?? SIGNIN_PASSWORD,
+    };
   }
-  return loadRegistered().find((r) =>
-    matches(r.persona.email, r.persona.accountNumber, r.persona.name),
-  );
+  const registered = loadRegistered().find((r) => {
+    const persona = withProfile(r.persona);
+    return matches(persona.email, persona.accountNumber, persona.name);
+  });
+  if (!registered) return undefined;
+  return { ...registered, persona: withProfile(registered.persona) };
 }
 
 export type NavItem = { href: string; label: string };
@@ -178,6 +338,8 @@ export function navForRole(role: UserRole): NavItem[] {
       return [{ href: "/tech", label: "Jobs" }];
     case "revenue_inspector":
       return [{ href: "/inspect", label: "Audits & QA" }];
+    case "admin":
+      return [{ href: "/admin", label: "Staff" }];
     case "executive":
       return [
         { href: "/analytics", label: "ROI" },
@@ -210,6 +372,7 @@ const SAFE_NEXT = [
   "/ops",
   "/tech",
   "/inspect",
+  "/admin",
   "/audit",
   "/analytics",
 ];

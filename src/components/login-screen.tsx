@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { AuthField, AuthFrame, authControlClass, authPrimaryClass } from "@/components/auth-frame";
 import { GoogleSignInButton } from "@/components/google-sign-in";
-import { PERSONAS, afterLoginPath, useSession } from "@/lib/use-session";
+import { presentStaff, PERSONAS } from "@/lib/session";
+import { afterLoginPath, useSession } from "@/lib/use-session";
 import { go, goReplace } from "@/lib/hard-nav";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +52,11 @@ export function LoginScreen() {
     if (persona) finish(afterLoginPath(persona, queryParam("next")));
   }
 
-  const staffPersonas = PERSONAS.filter((p) => p.role !== "resident");
+  const staffPersonas = PERSONAS.filter(
+    (p) => p.role !== "resident" && p.role !== "admin",
+  )
+    .map((persona) => presentStaff(persona))
+    .filter((persona): persona is NonNullable<typeof persona> => Boolean(persona));
 
   return (
     <AuthFrame title="Welcome Back" subtitle="Sign in with your municipal account.">
@@ -62,7 +67,7 @@ export function LoginScreen() {
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
             autoComplete="username"
-            placeholder="Account number or email"
+            placeholder="Username, account number, or email"
           />
         </AuthField>
         <AuthField label="Password">
@@ -80,7 +85,7 @@ export function LoginScreen() {
           Login
         </button>
         <p className="text-center text-[11px] text-[#6B7280]">
-          Household demo: account <span className="font-mono">3218840441</span> ·
+          Household sign-in: account <span className="font-mono">3218840441</span> ·
           password <span className="font-mono">electroraid</span>
         </p>
       </form>
@@ -113,6 +118,10 @@ export function LoginScreen() {
         </button>
         {staffOpen ? (
           <div className="mt-3 grid gap-2">
+            <p className="text-center text-[11px] text-[#6B7280]">
+              Administrator: username <span className="font-mono">admin</span>{" "}
+              · password <span className="font-mono">Admin123</span>
+            </p>
             {staffPersonas.map((p) => (
               <button
                 key={p.id}

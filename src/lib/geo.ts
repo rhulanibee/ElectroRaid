@@ -55,6 +55,21 @@ export function lerpPoint(from: GeoPoint, to: GeoPoint, t: number): GeoPoint {
   };
 }
 
+const SUBURB_POINTS: Record<string, GeoPoint> = {
+  mamelodi: { lon: 28.3932, lat: -25.7228 },
+  atteridgeville: { lon: 28.0704, lat: -25.7758 },
+  soshanguve: { lon: 28.1022, lat: -25.5284 },
+  hatfield: { lon: 28.2376, lat: -25.7472 },
+  "pretoria cbd": { lon: 28.1879, lat: -25.7463 },
+  "pretoria north": { lon: 28.1762, lat: -25.6794 },
+};
+
+/** Map pin for a suburb name. Unknown suburbs use Church Square. */
+export function pointForSuburb(suburb: string): GeoPoint {
+  const key = suburb.trim().toLowerCase();
+  return SUBURB_POINTS[key] ?? SUBURB_POINTS["pretoria cbd"];
+}
+
 export function formatKm(metres: number): string {
   if (metres < 950) return `${Math.round(metres)} m`;
   return `${(metres / 1000).toFixed(metres < 10000 ? 1 : 0)} km`;

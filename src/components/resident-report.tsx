@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { evidenceSvg } from "@/lib/evidence";
 import { postJson, usePlatform } from "@/lib/use-platform";
 import { useSession } from "@/lib/use-session";
 import { OUTAGE_REPORT_OPTIONS, TIP_REPORT_OPTIONS } from "@/lib/report-options";
+import { pointForSuburb } from "@/lib/geo";
 import { go } from "@/lib/hard-nav";
 import type { IngestReportInput, InvestigationType, OutageClassification } from "@/lib/types";
 
@@ -20,8 +20,9 @@ export function ResidentReport() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const suburb = persona?.suburb ?? "Mamelodi";
-  const account = persona?.accountNumber ?? "3218840441";
+  const suburb = persona?.suburb ?? "";
+  const account = persona?.accountNumber ?? "";
+  const address = persona?.address ?? "";
   const needsOther = mode === "outage" ? outageType === "other" : tipType === "other";
   const nearby = useMemo(
     () =>
@@ -33,6 +34,10 @@ export function ResidentReport() {
 
   async function submit() {
     if (!persona) return;
+    if (!account || !address || !suburb) {
+      setMessage("Add your suburb and street address in Settings before you report.");
+      return;
+    }
     if (needsOther && !notes.trim()) {
       setMessage("Other needs a short description of what you are seeing.");
       return;
@@ -52,20 +57,17 @@ export function ResidentReport() {
       const body: IngestReportInput = {
         accountNumber: mode === "outage" ? account : null,
         reporterName: mode === "tip" ? "Anonymous tip" : persona.name,
-        contactPhone: mode === "tip" ? null : persona.phone ?? "+27 82 441 0190",
-        location: {
-          lon: 28.394 + Math.random() * 0.002,
-          lat: -25.7234 + Math.random() * 0.002,
-        },
-        address:
-          mode === "tip"
-            ? "Informal tap, Tsamaya Road, Mamelodi Ext 11"
-            : "12 Tsamaya Road, Mamelodi Ext 11",
+        contactPhone: mode === "tip" ? null : persona.phone ?? null,
+        location: pointForSuburb(suburb),
+        address,
         suburb,
         classification: mode === "tip" ? "izinyoka_tip" : outageType,
         channel: mode === "tip" ? "anonymous_tip" : "app",
         notes: detail,
-        feederId: "fdr_mam_12",
+        feederId:
+          snapshot?.feeders.find(
+            (feeder) => feeder.suburb.toLowerCase() === suburb.toLowerCase(),
+          )?.id ?? null,
         investigationType:
           mode === "tip" ? (tipType as InvestigationType | "other") : undefined,
       };
@@ -78,19 +80,6 @@ export function ResidentReport() {
         investigation?: { reference: string; id: string };
       }>("/api/reports", body);
 
-      if (result.kind === "tip" && result.investigation?.id) {
-        await postJson("/api/field/action", {
-          action: "evidence",
-          kind: "investigation",
-          targetId: result.investigation.id,
-          caption: `${chosen?.label ?? "Other"} — resident photo`,
-          dataUri: evidenceSvg(
-            "Resident tip photo",
-            notes || "Anonymous evidence from Mamelodi Ext 11.",
-          ),
-          actorId: persona.id,
-        });
-      }
       if (!result.ok) {
         setMessage("Could not reach the control room. Try again.");
         return;

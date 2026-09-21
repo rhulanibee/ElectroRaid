@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ResidentNoticesProvider } from "@/lib/use-resident-notices";
 import { PlatformProvider } from "@/lib/use-platform";
 import { SessionProvider } from "@/lib/use-session";
 
@@ -17,7 +18,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider>
       <SessionProvider>
-        <PlatformProvider>{children}</PlatformProvider>
+        <PlatformProvider>
+          <ResidentNoticesProvider>{children}</ResidentNoticesProvider>
+        </PlatformProvider>
       </SessionProvider>
     </TooltipProvider>
   );

@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   LogOut,
   TrendingUp,
+  Users,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
   "/analytics": TrendingUp,
   "/tech": Wrench,
   "/inspect": ClipboardList,
+  "/admin": Users,
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {

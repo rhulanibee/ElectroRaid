@@ -7,7 +7,9 @@ import {
   findSignIn,
   loadRegistered,
   personaById,
+  saveProfile,
   saveRegistered,
+  withProfile,
   type DemoPersona,
   type RegisterInput,
 } from "./session";
@@ -20,6 +22,14 @@ interface SessionValue {
   loginWithGoogle: () => DemoPersona | null;
   register: (input: RegisterInput) => { persona: DemoPersona | null; error?: string };
   completeVerification: (proofName: string) => DemoPersona | null;
+  updateProfile: (input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    suburb: string;
+    address: string;
+  }) => { persona: DemoPersona | null; error?: string };
   logout: () => void;
 }
 
@@ -31,6 +41,7 @@ const SessionContext = createContext<SessionValue>({
   loginWithGoogle: () => null,
   register: () => ({ persona: null }),
   completeVerification: () => null,
+  updateProfile: () => ({ persona: null }),
   logout: () => {},
 });
 
@@ -133,6 +144,60 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setPersona(next);
         persist(next.id);
         return next;
+      },
+      updateProfile: (input) => {
+        if (!persona) return { persona: null, error: "Sign in again to save your details." };
+        const firstName = input.firstName.trim();
+        const lastName = input.lastName.trim();
+        const email = input.email.trim().toLowerCase();
+        const phone = input.phone.trim();
+        const suburb = input.suburb.trim();
+        const address = input.address.trim();
+        if (!firstName || !lastName) {
+          return { persona: null, error: "Enter your first and last name." };
+        }
+        if (!email.includes("@")) {
+          return { persona: null, error: "Enter a valid email address." };
+        }
+        if (!suburb) {
+          return { persona: null, error: "Enter your suburb." };
+        }
+        if (!address) {
+          return { persona: null, error: "Enter your street address." };
+        }
+        const taken = [...PERSONAS, ...loadRegistered().map((row) => row.persona)]
+          .map(withProfile)
+          .some((row) => row.id !== persona.id && row.email.toLowerCase() === email);
+        if (taken) {
+          return { persona: null, error: "That email is already used by another account." };
+        }
+        const patch = {
+          firstName,
+          lastName,
+          name: `${firstName} ${lastName}`,
+          email,
+          phone,
+          suburb,
+          address,
+          title: `Resident · ${suburb}`,
+        };
+        saveProfile(persona.id, patch);
+        const rows = loadRegistered();
+        const idx = rows.findIndex((row) => row.persona.id === persona.id);
+        if (idx >= 0) {
+          rows[idx] = {
+            ...rows[idx],
+            persona: {
+              ...rows[idx].persona,
+              ...patch,
+              accountNumber: rows[idx].persona.accountNumber,
+            },
+          };
+          saveRegistered(rows);
+        }
+        const next = withProfile({ ...persona, ...patch, accountNumber: persona.accountNumber });
+        setPersona(next);
+        return { persona: next };
       },
       logout: () => {
         setPersona(null);

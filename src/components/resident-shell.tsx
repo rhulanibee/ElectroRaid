@@ -11,6 +11,7 @@ import {
   Zap,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { useResidentNotices } from "@/lib/use-resident-notices";
 import { useSession } from "@/lib/use-session";
 import { navForRole, navItemActive } from "@/lib/session";
 import { go, goReplace } from "@/lib/hard-nav";
@@ -27,6 +28,7 @@ const ICONS: Record<string, typeof LayoutDashboard> = {
 export function ResidentShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { persona, ready, logout } = useSession();
+  const { unread } = useResidentNotices();
 
   useEffect(() => {
     if (!ready) return;
@@ -85,6 +87,18 @@ export function ResidentShell({ children }: { children: React.ReactNode }) {
               >
                 <Icon className="size-4" />
                 {item.label}
+                {item.href === "/resident/notifications" && unread > 0 ? (
+                  <span
+                    className={cn(
+                      "ml-auto min-w-5 rounded-full px-1.5 text-center text-[10px] font-bold",
+                      active
+                        ? "bg-[#24A148] text-white"
+                        : "bg-white text-[#24A148]",
+                    )}
+                  >
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                ) : null}
               </a>
             );
           })}
@@ -140,7 +154,14 @@ export function ResidentShell({ children }: { children: React.ReactNode }) {
                   active ? "text-[#24A148]" : "text-[#6B7280]",
                 )}
               >
-                <Icon className="size-4" />
+                <span className="relative">
+                  <Icon className="size-4" />
+                  {item.href === "/resident/notifications" && unread > 0 ? (
+                    <span className="absolute -top-1 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[#24A148] px-0.5 text-[9px] font-bold text-white">
+                      {unread > 9 ? "9+" : unread}
+                    </span>
+                  ) : null}
+                </span>
                 {item.label.replace("Outage", "").replace("Reports", "Track")}
               </a>
             );

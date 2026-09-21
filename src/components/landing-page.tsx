@@ -11,6 +11,10 @@ import unionBuildingHero from "@/Assets/Image/Union-Building-LandingPage.jpeg";
 export function LandingPage() {
   const { persona, ready } = useSession();
   const signedIn = Boolean(ready && persona);
+  const reportPath =
+    persona?.role === "resident" ? "/resident/report" : (persona?.home ?? "/resident/report");
+  const trackPath =
+    persona?.role === "resident" ? "/resident/track" : (persona?.home ?? "/resident/track");
 
   return (
     <div className="min-h-dvh bg-white">
@@ -37,7 +41,7 @@ export function LandingPage() {
             <button
               type="button"
               onClick={() =>
-                go(signedIn ? "/resident/report" : "/login?next=/resident/report")
+                go(signedIn ? reportPath : "/login?next=/resident/report")
               }
               className="inline-flex h-12 min-w-[160px] items-center justify-center rounded-xl bg-[#24A148] px-8 text-base font-semibold text-white shadow-lg shadow-black/20 hover:bg-[#1e8a3c]"
             >
@@ -46,7 +50,7 @@ export function LandingPage() {
             <button
               type="button"
               onClick={() =>
-                go(signedIn ? "/resident/track" : "/login?next=/resident/track")
+                go(signedIn ? trackPath : "/login?next=/resident/track")
               }
               className="inline-flex h-12 min-w-[160px] items-center justify-center rounded-xl border-2 border-white bg-transparent px-8 text-base font-semibold text-white hover:bg-white/10"
             >

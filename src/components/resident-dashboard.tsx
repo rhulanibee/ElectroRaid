@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 import { Bell, Plus, Search } from "lucide-react";
 import { CommandMap } from "@/components/command-map";
 import { StatusBadge, SeverityBadge } from "@/components/status-badge";
+import { noticeLabel } from "@/lib/resident-notices";
 import { usePlatform } from "@/lib/use-platform";
+import { useResidentNotices } from "@/lib/use-resident-notices";
 import { useSession } from "@/lib/use-session";
 import { classificationLabel, relativeMinutes } from "@/lib/format";
 import { go } from "@/lib/hard-nav";
@@ -12,43 +14,35 @@ import { go } from "@/lib/hard-nav";
 export function ResidentDashboard() {
   const { persona } = useSession();
   const { snapshot, connected } = usePlatform();
+  const { items: notices, unread } = useResidentNotices();
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const suburb = persona?.suburb ?? "Mamelodi";
+  const suburb = persona?.suburb ?? "";
+  const account = persona?.accountNumber;
+
+  const ownIncidents = useMemo(() => {
+    const mine = new Set(
+      (snapshot?.reports ?? [])
+        .filter((report) => account && report.accountNumber === account)
+        .map((report) => report.masterIncidentId),
+    );
+    return (snapshot?.incidents ?? []).filter(
+      (incident) => mine.has(incident.id) && incident.status !== "closed",
+    );
+  }, [snapshot, account]);
 
   const tickets = useMemo(() => {
-    const list = (snapshot?.incidents ?? []).filter(
-      (i) => i.suburb === suburb && i.status !== "closed",
-    );
     const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (i) =>
-        i.reference.toLowerCase().includes(q) ||
-        i.address.toLowerCase().includes(q) ||
-        classificationLabel(i.classification).includes(q),
+    if (!q) return ownIncidents;
+    return ownIncidents.filter(
+      (incident) =>
+        incident.reference.toLowerCase().includes(q) ||
+        incident.address.toLowerCase().includes(q) ||
+        classificationLabel(incident.classification).includes(q),
     );
-  }, [snapshot, suburb, query]);
+  }, [ownIncidents, query]);
 
-  const notifications = useMemo(() => {
-    const ids = new Set(
-      (snapshot?.incidents ?? [])
-        .filter((i) => i.suburb === suburb)
-        .map((i) => i.id),
-    );
-    return (snapshot?.events ?? []).filter(
-      (e) =>
-        (e.type === "field.onsite" ||
-          e.type === "incident.resolved" ||
-          e.type === "dispatch.assigned" ||
-          e.type === "crew.arrived" ||
-          e.type === "incident.resident_confirmed" ||
-          e.type === "incident.resident_dispute") &&
-        (!e.entityId || ids.has(e.entityId)),
-    );
-  }, [snapshot, suburb]);
-
-  const alert = notifications[0];
+  const alert = notices.find((notice) => !notice.read) ?? notices[0];
   const initials = (persona?.name ?? "R")
     .split(" ")
     .map((p) => p[0])
@@ -73,8 +67,10 @@ export function ResidentDashboard() {
           className="relative hidden size-11 items-center justify-center rounded-xl border border-[#E5E7EB] text-[#374151] hover:bg-[#F3F5F4] md:inline-flex"
         >
           <Bell className="size-4" />
-          {notifications.length ? (
-            <span className="absolute top-2 right-2 size-2 rounded-full bg-[#24A148]" />
+          {unread ? (
+            <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#24A148] px-1 text-[10px] font-bold text-white">
+              {unread > 9 ? "9+" : unread}
+            </span>
           ) : null}
         </button>
         <div className="hidden size-11 items-center justify-center rounded-full bg-[#E8F6EC] text-xs font-bold text-[#24A148] md:flex">
@@ -94,7 +90,7 @@ export function ResidentDashboard() {
         {alert ? (
           <div className="rounded-2xl border border-[#C6EBD3] bg-[#E8F6EC] px-4 py-3">
             <div className="text-[11px] font-bold tracking-[0.16em] text-[#167a34] uppercase">
-              Notifications
+              {noticeLabel(alert.type)}
             </div>
             <div className="mt-1 text-sm font-semibold text-[#121417]">
               {alert.title}
@@ -112,9 +108,7 @@ export function ResidentDashboard() {
         <div className="min-h-[280px] overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
           {snapshot ? (
             <CommandMap
-              incidents={snapshot.incidents.filter(
-                (i) => i.status !== "closed",
-              )}
+              incidents={ownIncidents}
               investigations={[]}
               crews={snapshot.crews}
               selectedId={selectedId}

@@ -14,14 +14,17 @@ import type { MasterIncident } from "@/lib/types";
 export function ResidentTrack() {
   const { persona } = useSession();
   const { snapshot } = usePlatform();
-  const suburb = persona?.suburb ?? "Mamelodi";
-  const tickets = useMemo(
-    () =>
-      (snapshot?.incidents ?? []).filter(
-        (i) => i.suburb === suburb && i.status !== "closed",
-      ),
-    [snapshot, suburb],
-  );
+  const account = persona?.accountNumber;
+  const tickets = useMemo(() => {
+    const mine = new Set(
+      (snapshot?.reports ?? [])
+        .filter((report) => account && report.accountNumber === account)
+        .map((report) => report.masterIncidentId),
+    );
+    return (snapshot?.incidents ?? []).filter(
+      (incident) => mine.has(incident.id) && incident.status !== "closed",
+    );
+  }, [snapshot, account]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -57,7 +60,7 @@ export function ResidentTrack() {
       <div>
         <h1 className="font-heading text-2xl font-bold">Active Reports</h1>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Live technician tracking for tickets in {suburb}.
+          Live technician tracking for reports on your account.
         </p>
       </div>
 

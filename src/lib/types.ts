@@ -9,7 +9,21 @@ export type UserRole =
   | "technician"
   | "revenue_inspector"
   | "executive"
+  | "admin"
   | "system";
+
+export type StaffRole = "dispatcher" | "technician" | "revenue_inspector";
+
+/** A municipal user an administrator provisions onto the live ops floor. */
+export interface StaffProvision {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  role: StaffRole;
+  crewId: string | null;
+  callsign: string | null;
+}
 
 export type OutageClassification =
   | "no_power"
