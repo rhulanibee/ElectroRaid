@@ -90,10 +90,10 @@ export function TrackLiveMap({
 
       group.addLayer(
         L.polyline([van, house], {
-          color: "#3dd6a0",
+          color: "#24A148",
           weight: 4,
           dashArray: "8 10",
-          opacity: 0.85,
+          opacity: 0.9,
         }),
       );
 
@@ -118,8 +118,8 @@ export function TrackLiveMap({
       const vanIcon = L.divIcon({
         className: "",
         html: `<div style="display:flex;flex-direction:column;align-items:center">
-          <div style="width:16px;height:16px;border-radius:99px;background:#5ec8ff;border:2px solid #fff;box-shadow:0 0 14px #5ec8ff"></div>
-          <div style="margin-top:3px;font:11px/1 ui-sans-serif;color:#071016;background:#5ec8ff;padding:2px 6px;border-radius:99px;font-weight:700;white-space:nowrap">${
+          <div style="width:16px;height:16px;border-radius:99px;background:#24A148;border:2px solid #fff;box-shadow:0 0 14px #24A148"></div>
+          <div style="margin-top:3px;font:11px/1 ui-sans-serif;color:#fff;background:#24A148;padding:2px 6px;border-radius:99px;font-weight:700;white-space:nowrap">${
             perspective === "technician" ? "You" : "Tech"
           }</div>
         </div>`,
@@ -152,13 +152,13 @@ export function TrackLiveMap({
   const maps = navigateUrl(crew.location, incident.location);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border">
+    <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white">
       <div
         ref={elRef}
         className="h-64 w-full md:h-80"
         style={{ minHeight: 256 }}
       />
-      <div className="bg-card flex items-start justify-between gap-3 px-3 py-2">
+      <div className="flex items-start justify-between gap-3 bg-white px-3 py-2">
         <div>
           <div className="text-[10px] tracking-wide text-primary uppercase">
             {perspective === "technician"

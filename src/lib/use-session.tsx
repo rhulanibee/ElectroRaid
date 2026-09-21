@@ -4,17 +4,22 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
   PERSONAS,
   SESSION_KEY,
-  personaByEmail,
+  findSignIn,
+  loadRegistered,
   personaById,
+  saveRegistered,
   type DemoPersona,
-  SIGNIN_PASSWORD,
+  type RegisterInput,
 } from "./session";
 
 interface SessionValue {
   persona: DemoPersona | null;
   ready: boolean;
   login: (id: string) => DemoPersona | null;
-  loginWithPassword: (email: string, password: string) => DemoPersona | null;
+  loginWithPassword: (identifier: string, password: string) => DemoPersona | null;
+  loginWithGoogle: () => DemoPersona | null;
+  register: (input: RegisterInput) => { persona: DemoPersona | null; error?: string };
+  completeVerification: (proofName: string) => DemoPersona | null;
   logout: () => void;
 }
 
@@ -23,8 +28,15 @@ const SessionContext = createContext<SessionValue>({
   ready: false,
   login: () => null,
   loginWithPassword: () => null,
+  loginWithGoogle: () => null,
+  register: () => ({ persona: null }),
+  completeVerification: () => null,
   logout: () => {},
 });
+
+function persist(id: string) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ id }));
+}
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [persona, setPersona] = useState<DemoPersona | null>(null);
@@ -51,15 +63,76 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       login: (id: string) => {
         const found = personaById(id) ?? null;
         setPersona(found);
-        if (found) localStorage.setItem(SESSION_KEY, JSON.stringify({ id: found.id }));
+        if (found) persist(found.id);
         return found;
       },
-      loginWithPassword: (email: string, password: string) => {
-        const found = personaByEmail(email);
-        if (!found || password !== SIGNIN_PASSWORD) return null;
+      loginWithPassword: (identifier: string, password: string) => {
+        const match = findSignIn(identifier);
+        if (!match || match.password !== password.trim()) return null;
+        setPersona(match.persona);
+        persist(match.persona.id);
+        return match.persona;
+      },
+      loginWithGoogle: () => {
+        const found = PERSONAS.find((p) => p.id === "usr_sibusiso") ?? null;
         setPersona(found);
-        localStorage.setItem(SESSION_KEY, JSON.stringify({ id: found.id }));
+        if (found) persist(found.id);
         return found;
+      },
+      register: (input: RegisterInput) => {
+        const email = input.email.trim().toLowerCase();
+        const account = input.accountNumber.trim();
+        if (!input.firstName.trim() || !input.lastName.trim()) {
+          return { persona: null, error: "Enter your first and last name." };
+        }
+        if (!email.includes("@")) {
+          return { persona: null, error: "Enter a valid email address." };
+        }
+        if (account.length < 6) {
+          return { persona: null, error: "Enter the 10-digit municipal account number." };
+        }
+        if (input.password.length < 8) {
+          return { persona: null, error: "Password must be at least 8 characters." };
+        }
+        if (findSignIn(email) || findSignIn(account)) {
+          return {
+            persona: null,
+            error: "An account already exists for that email or account number. Sign in instead.",
+          };
+        }
+        const persona: DemoPersona = {
+          id: `usr_${Date.now()}`,
+          name: `${input.firstName.trim()} ${input.lastName.trim()}`,
+          firstName: input.firstName.trim(),
+          lastName: input.lastName.trim(),
+          role: "resident",
+          title: `Resident · ${input.firstName.trim()}`,
+          email,
+          phone: input.phone.trim(),
+          home: "/resident",
+          suburb: "Mamelodi",
+          accountNumber: account,
+          verified: false,
+          blurb: "Report a fault and track restoration.",
+          duties: ["Report", "Track", "Confirm"],
+        };
+        saveRegistered([...loadRegistered(), { persona, password: input.password }]);
+        setPersona(persona);
+        persist(persona.id);
+        return { persona };
+      },
+      completeVerification: (proofName: string) => {
+        if (!persona) return null;
+        const next = { ...persona, verified: true };
+        const rows = loadRegistered();
+        const idx = rows.findIndex((r) => r.persona.id === persona.id);
+        if (idx >= 0) {
+          rows[idx] = { ...rows[idx], persona: next, proofName };
+          saveRegistered(rows);
+        }
+        setPersona(next);
+        persist(next.id);
+        return next;
       },
       logout: () => {
         setPersona(null);
@@ -78,4 +151,4 @@ export function useSession() {
   return useContext(SessionContext);
 }
 
-export { PERSONAS, SIGNIN_PASSWORD };
+export { PERSONAS, SIGNIN_PASSWORD, afterLoginPath } from "./session";
