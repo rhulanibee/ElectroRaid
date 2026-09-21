@@ -4,8 +4,8 @@
   "description": "City of Tshwane smart outage and revenue protection — ElectroRaid",
   "start_url": "/field",
   "display": "standalone",
-  "background_color": "#071016",
-  "theme_color": "#071016",
+  "background_color": "#24A148",
+  "theme_color": "#24A148",
   "icons": [
     {
       "src": "/icon.svg",

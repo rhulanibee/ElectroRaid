@@ -1,10 +1,10 @@
-import { AppShell } from "@/components/app-shell";
-import { ResidentPortal } from "@/components/resident-portal";
+import { ResidentShell } from "@/components/resident-shell";
+import { ResidentDashboard } from "@/components/resident-dashboard";
 
 export default function ResidentPage() {
   return (
-    <AppShell>
-      <ResidentPortal />
-    </AppShell>
+    <ResidentShell>
+      <ResidentDashboard />
+    </ResidentShell>
   );
 }
