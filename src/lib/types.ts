@@ -287,6 +287,8 @@ export interface PlatformSnapshot {
   audit: AuditLog[];
   events: LiveEvent[];
   weights: PriorityWeights;
+  /** Increases when a ticket is filed or updated. GPS ticks do not change it. */
+  floorRevision: number;
 }
 
 export const DEDUP_RADIUS_M = 500;

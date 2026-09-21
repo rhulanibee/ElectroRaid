@@ -84,6 +84,7 @@ interface LiveFloorFile {
   events: LiveEvent[];
   provisioned: StaffProvision[];
   removedIds: string[];
+  floorRevision?: number;
 }
 
 class ElectroRaidStore {
@@ -108,6 +109,8 @@ class ElectroRaidStore {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** mtime of the live file this process last read or wrote. */
   private diskMtime = 0;
+  /** Bumps when a ticket changes. Van GPS does not bump it. */
+  private floorRevision = 0;
 
   constructor() {
     this.hydrate(true);
@@ -175,6 +178,7 @@ class ElectroRaidStore {
       audit: [...this.audit].reverse(),
       events: [...this.events].reverse(),
       weights: this.weights,
+      floorRevision: this.floorRevision,
     };
   }
 
@@ -884,6 +888,7 @@ class ElectroRaidStore {
       if (this.events.length > MAX_EVENTS) {
         this.events.splice(0, this.events.length - MAX_EVENTS);
       }
+      this.floorRevision += 1;
     }
     this.absorbNewerDisk();
     const snapshot = this.view();
@@ -950,15 +955,7 @@ class ElectroRaidStore {
   }
 
   private refreshFromDisk() {
-    try {
-      if (!fs.existsSync(LIVE_PATH)) return;
-      const mtime = fs.statSync(LIVE_PATH).mtimeMs;
-      if (mtime <= this.diskMtime + 1) return;
-      this.readLive();
-      this.diskMtime = mtime;
-    } catch {
-      /* keep the in-memory floor */
-    }
+    this.absorbNewerDisk();
   }
 
   private scheduleSave() {
@@ -997,6 +994,33 @@ class ElectroRaidStore {
       for (const row of live.audit ?? []) {
         if (!auditIds.has(row.eventId)) this.audit.push(row);
       }
+      const removed = new Set([...(this.removedIds), ...(live.removedIds ?? [])]);
+      this.removedIds = [...removed];
+      for (const user of live.users ?? []) {
+        if (removed.has(user.id)) continue;
+        const idx = this.users.findIndex((row) => row.id === user.id);
+        if (idx >= 0) {
+          this.users[idx] = {
+            ...this.users[idx],
+            fullName: user.fullName,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+            isActive: user.isActive,
+          };
+        } else if (user.role !== "system") {
+          this.users.push(user);
+        }
+      }
+      this.users = this.users.filter((user) => !removed.has(user.id));
+      const meters = new Map(this.meters.map((meter) => [meter.id, meter]));
+      for (const meter of live.meters ?? []) meters.set(meter.id, meter);
+      this.meters = [...meters.values()];
+      const provisionedIds = new Set(this.provisioned.map((person) => person.id));
+      for (const person of live.provisioned ?? []) {
+        if (!provisionedIds.has(person.id)) this.provisioned.push(person);
+      }
+      this.floorRevision = Math.max(this.floorRevision, live.floorRevision ?? 0);
       this.diskMtime = mtime;
     } catch {
       /* keep the in-memory floor */
@@ -1018,6 +1042,7 @@ class ElectroRaidStore {
       events: this.events,
       provisioned: this.provisioned,
       removedIds: this.removedIds,
+      floorRevision: this.floorRevision,
     };
     try {
       fs.mkdirSync(path.dirname(LIVE_PATH), { recursive: true });
@@ -1073,6 +1098,7 @@ class ElectroRaidStore {
       this.audit = live.audit ?? [];
       this.events = live.events ?? [];
       this.provisioned = live.provisioned ?? [];
+      this.floorRevision = live.floorRevision ?? 0;
       this.diskMtime = fs.statSync(LIVE_PATH).mtimeMs;
     } catch {
       /* keep the sign-in floor if the file is unreadable */
@@ -1479,13 +1505,13 @@ class ElectroRaidStore {
   }
 }
 
-const globalForStore = globalThis as unknown as { __electroraid_v5?: ElectroRaidStore };
+const globalForStore = globalThis as unknown as { __electroraid_v6?: ElectroRaidStore };
 
 export function getStore(): ElectroRaidStore {
-  if (!globalForStore.__electroraid_v5) {
-    globalForStore.__electroraid_v5 = new ElectroRaidStore();
+  if (!globalForStore.__electroraid_v6) {
+    globalForStore.__electroraid_v6 = new ElectroRaidStore();
   }
-  return globalForStore.__electroraid_v5;
+  return globalForStore.__electroraid_v6;
 }
 
 export { hoursAgo };

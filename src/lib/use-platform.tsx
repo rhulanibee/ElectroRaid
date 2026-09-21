@@ -25,6 +25,57 @@ const empty: PlatformState = {
 
 const PlatformContext = createContext<PlatformState>(empty);
 
+function laterStamp(next: string | null | undefined, prev: string | null | undefined) {
+  return (next ?? "") >= (prev ?? "");
+}
+
+function mergeRows<T>(
+  prevRows: T[],
+  nextRows: T[],
+  idOf: (row: T) => string,
+  stampOf: (row: T) => string | null | undefined,
+): T[] {
+  const byId = new Map<string, T>();
+  for (const row of prevRows) byId.set(idOf(row), row);
+  for (const row of nextRows) {
+    const previous = byId.get(idOf(row));
+    if (!previous || laterStamp(stampOf(row), stampOf(previous))) byId.set(idOf(row), row);
+  }
+  return [...byId.values()];
+}
+
+/** Keep a ticket that is already on screen when an older copy of the floor arrives. */
+function applySnapshot(
+  prev: PlatformSnapshot | null,
+  next: PlatformSnapshot | undefined,
+): PlatformSnapshot | null {
+  if (!next) return prev;
+  if (!prev) return next;
+  const prevRev = prev.floorRevision ?? 0;
+  const nextRev = next.floorRevision ?? 0;
+  if (nextRev < prevRev) return prev;
+  if (nextRev > prevRev) return next;
+  return {
+    ...next,
+    users: mergeRows(prev.users, next.users, (row) => row.id, () => null),
+    crews: mergeRows(prev.crews, next.crews, (row) => row.id, (row) => row.lastGpsAt),
+    incidents: mergeRows(
+      prev.incidents,
+      next.incidents,
+      (row) => row.id,
+      (row) => row.lastActivityAt,
+    ),
+    reports: mergeRows(prev.reports, next.reports, (row) => row.id, (row) => row.reportedAt),
+    investigations: mergeRows(
+      prev.investigations,
+      next.investigations,
+      (row) => row.id,
+      (row) => row.closedAt ?? row.dispatchedAt ?? row.createdAt,
+    ),
+    floorRevision: nextRev,
+  };
+}
+
 export function PlatformProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<PlatformState>(empty);
 
@@ -39,9 +90,9 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         setState((prev) => ({
           ...prev,
-          snapshot: data.snapshot,
-          roi: data.roi,
-          chain: data.chain,
+          snapshot: applySnapshot(prev.snapshot, data.snapshot),
+          roi: data.roi ?? prev.roi,
+          chain: data.chain ?? prev.chain,
           error: null,
         }));
       } catch (error) {
@@ -85,7 +136,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       setState((prev) => ({
         ...prev,
         connected: true,
-        snapshot: payload.snapshot ?? prev.snapshot,
+        snapshot: applySnapshot(prev.snapshot, payload.snapshot),
         roi: payload.roi ?? prev.roi,
         chain: payload.chain ?? prev.chain,
         liveEvent:

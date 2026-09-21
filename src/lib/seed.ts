@@ -181,5 +181,6 @@ export function seedPlatform(): PlatformSnapshot {
       wCritical: 280,
       wElapsed: 1.8,
     },
+    floorRevision: 0,
   };
 }

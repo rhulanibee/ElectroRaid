@@ -38,6 +38,8 @@ export function CommandMap({
   const elRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
   const layersRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const crewLayerRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const crewMarkers = useRef<Map<string, import("leaflet").Marker>>(new Map());
   const fittedKey = useRef("");
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
@@ -59,10 +61,14 @@ export function CommandMap({
           i.location,
           i.anomalyRiskScore,
         ]),
-        crews: crews.map((c) => [c.id, c.status, c.location]),
         selectedId,
       }),
-    [incidents, investigations, crews, selectedId, showInvestigations],
+    [incidents, investigations, selectedId, showInvestigations],
+  );
+
+  const crewSignature = useMemo(
+    () => crews.map((crew) => [crew.id, crew.status, crew.location.lat, crew.location.lon, crew.callsign]).join("|"),
+    [crews],
   );
 
   useEffect(() => {
@@ -93,6 +99,8 @@ export function CommandMap({
 
       L.control.zoom({ position: "bottomright" }).addTo(map);
       layersRef.current = L.layerGroup().addTo(map);
+      crewLayerRef.current = L.layerGroup().addTo(map);
+      crewMarkers.current.clear();
       mapRef.current = map;
       requestAnimationFrame(() => map.invalidateSize());
       setMapReady(true);
@@ -166,25 +174,6 @@ export function CommandMap({
         );
       }
 
-      for (const crew of crews) {
-        const color =
-          crew.specialization === "revenue_protection" ? "#e4c35a" : "#5ec8ff";
-        const icon = L.divIcon({
-          className: "",
-          html: `<div style="display:flex;flex-direction:column;align-items:center">
-            <div style="width:10px;height:10px;border-radius:99px;background:${color};box-shadow:0 0 10px ${color}"></div>
-            <div style="margin-top:2px;font:10px/1 ui-sans-serif;color:#d7efe6;background:#071016cc;padding:1px 4px;border-radius:4px;white-space:nowrap">${crew.specialization === "revenue_protection" ? "Inspector" : "Tech"} · ${crew.callsign.split(" ")[0]}</div>
-          </div>`,
-          iconSize: [80, 28],
-          iconAnchor: [40, 8],
-        });
-        group.addLayer(
-          L.marker([crew.location.lat, crew.location.lon], { icon }).bindTooltip(
-            `${crew.specialization === "revenue_protection" ? "Inspector" : "Technician"} · ${crew.callsign} · ${crew.status.replaceAll("_", " ")}`,
-          ),
-        );
-      }
-
       const selected =
         incidents.find((i) => i.id === selectedId) ??
         investigations.find((i) => i.id === selectedId);
@@ -226,7 +215,51 @@ export function CommandMap({
     return () => {
       active = false;
     };
-  }, [signature, incidents, investigations, crews, selectedId, mapReady, showInvestigations]);
+  }, [signature, incidents, investigations, selectedId, mapReady, showInvestigations]);
+
+  useEffect(() => {
+    let active = true;
+    import("leaflet").then((L) => {
+      if (!active || !mapRef.current) return;
+      const group = crewLayerRef.current;
+      if (!group) return;
+      const seen = new Set<string>();
+      for (const crew of crews) {
+        seen.add(crew.id);
+        const existing = crewMarkers.current.get(crew.id);
+        if (existing) {
+          existing.setLatLng([crew.location.lat, crew.location.lon]);
+          existing.setTooltipContent(
+            `${crew.specialization === "revenue_protection" ? "Inspector" : "Technician"} · ${crew.callsign} · ${crew.status.replaceAll("_", " ")}`,
+          );
+          continue;
+        }
+        const color = crew.specialization === "revenue_protection" ? "#e4c35a" : "#5ec8ff";
+        const icon = L.divIcon({
+          className: "",
+          html: `<div style="display:flex;flex-direction:column;align-items:center">
+            <div style="width:10px;height:10px;border-radius:99px;background:${color};box-shadow:0 0 10px ${color}"></div>
+            <div style="margin-top:2px;font:10px/1 ui-sans-serif;color:#d7efe6;background:#071016cc;padding:1px 4px;border-radius:4px;white-space:nowrap">${crew.specialization === "revenue_protection" ? "Inspector" : "Tech"} · ${crew.callsign.split(" ")[0]}</div>
+          </div>`,
+          iconSize: [80, 28],
+          iconAnchor: [40, 8],
+        });
+        const marker = L.marker([crew.location.lat, crew.location.lon], { icon }).bindTooltip(
+          `${crew.specialization === "revenue_protection" ? "Inspector" : "Technician"} · ${crew.callsign} · ${crew.status.replaceAll("_", " ")}`,
+        );
+        group.addLayer(marker);
+        crewMarkers.current.set(crew.id, marker);
+      }
+      for (const [id, marker] of crewMarkers.current) {
+        if (seen.has(id)) continue;
+        marker.remove();
+        crewMarkers.current.delete(id);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [crewSignature, crews, mapReady]);
 
   return (
     <div
