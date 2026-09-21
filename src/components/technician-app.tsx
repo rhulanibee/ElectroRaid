@@ -51,9 +51,15 @@ export function TechnicianApp() {
     );
   }, [online, snapshot]);
 
-  const crew = snapshot?.crews.find((c) => c.id === persona?.crewId);
+  const crew =
+    snapshot?.crews.find((c) => c.userId === persona?.id) ??
+    snapshot?.crews.find((c) => c.id === persona?.crewId);
   const assigned = snapshot?.incidents.find(
-    (i) => i.assignedCrewId === persona?.crewId && i.status !== "resolved" && i.status !== "closed",
+    (i) =>
+      Boolean(crew) &&
+      i.assignedCrewId === crew?.id &&
+      i.status !== "resolved" &&
+      i.status !== "closed",
   );
   const pool = useMemo(
     () =>

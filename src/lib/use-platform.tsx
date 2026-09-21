@@ -32,11 +32,8 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
     let source: EventSource | null = null;
     let cancelled = false;
 
-    async function bootstrap() {
+    async function loadState() {
       try {
-        await syncLocalStaff().catch(() => {
-          /* staff directory is reapplied on the next successful sync */
-        });
         const res = await fetch("/api/state", { cache: "no-store" });
         const data = await res.json();
         if (cancelled) return;
@@ -57,7 +54,18 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    async function bootstrap() {
+      await syncLocalStaff().catch(() => {
+        /* staff directory is reapplied on the next successful sync */
+      });
+      await loadState();
+    }
+
     bootstrap();
+
+    const poll = window.setInterval(() => {
+      loadState();
+    }, 2000);
 
     source = new EventSource("/api/events");
     source.onopen = () => {
@@ -90,6 +98,7 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       cancelled = true;
+      window.clearInterval(poll);
       source?.close();
     };
   }, []);

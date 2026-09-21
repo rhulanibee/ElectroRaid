@@ -54,6 +54,23 @@ const MAX_EVENTS = 80;
 const SEEDED_STAFF = new Set(["usr_thandiwe", "usr_sipho", "usr_nomsa"]);
 const LIVE_PATH = path.join(process.cwd(), "data", "live-floor.json");
 
+function keepNewer<T>(
+  memory: T[],
+  disk: T[],
+  idOf: (row: T) => string,
+  stampOf: (row: T) => string | null,
+): T[] {
+  const byId = new Map<string, T>();
+  for (const row of disk) byId.set(idOf(row), row);
+  for (const row of memory) {
+    const prev = byId.get(idOf(row));
+    if (!prev || (stampOf(row) ?? "") >= (stampOf(prev) ?? "")) {
+      byId.set(idOf(row), row);
+    }
+  }
+  return [...byId.values()];
+}
+
 interface LiveFloorFile {
   version: 1;
   users: User[];
@@ -89,6 +106,8 @@ class ElectroRaidStore {
   private removedIds: string[] = [];
 
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** mtime of the live file this process last read or wrote. */
+  private diskMtime = 0;
 
   constructor() {
     this.hydrate(true);
@@ -134,6 +153,11 @@ class ElectroRaidStore {
   }
 
   snapshot(): PlatformSnapshot {
+    this.refreshFromDisk();
+    return this.view();
+  }
+
+  private view(): PlatformSnapshot {
     this.recomputePriorities();
     return {
       users: this.users,
@@ -861,9 +885,11 @@ class ElectroRaidStore {
         this.events.splice(0, this.events.length - MAX_EVENTS);
       }
     }
-    const snapshot = this.snapshot();
+    this.absorbNewerDisk();
+    const snapshot = this.view();
     for (const fn of this.listeners) fn(live, snapshot);
-    this.scheduleSave();
+    if (recordInFeed) this.writeLive();
+    else this.scheduleSave();
   }
 
   updateHousehold(input: {
@@ -923,6 +949,18 @@ class ElectroRaidStore {
     });
   }
 
+  private refreshFromDisk() {
+    try {
+      if (!fs.existsSync(LIVE_PATH)) return;
+      const mtime = fs.statSync(LIVE_PATH).mtimeMs;
+      if (mtime <= this.diskMtime + 1) return;
+      this.readLive();
+      this.diskMtime = mtime;
+    } catch {
+      /* keep the in-memory floor */
+    }
+  }
+
   private scheduleSave() {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(() => {
@@ -931,7 +969,42 @@ class ElectroRaidStore {
     }, 400);
   }
 
+  private absorbNewerDisk() {
+    try {
+      if (!fs.existsSync(LIVE_PATH)) return;
+      const mtime = fs.statSync(LIVE_PATH).mtimeMs;
+      if (mtime <= this.diskMtime + 1) return;
+      const live = JSON.parse(fs.readFileSync(LIVE_PATH, "utf8")) as LiveFloorFile;
+      if (!live || live.version !== 1) return;
+      this.incidents = keepNewer(this.incidents, live.incidents ?? [], (row) => row.id, (row) => row.lastActivityAt);
+      this.reports = keepNewer(this.reports, live.reports ?? [], (row) => row.id, (row) => row.reportedAt);
+      this.investigations = keepNewer(
+        this.investigations,
+        live.investigations ?? [],
+        (row) => row.id,
+        (row) => row.closedAt ?? row.dispatchedAt ?? row.createdAt,
+      );
+      for (const crew of live.crews ?? []) {
+        const idx = this.crews.findIndex((row) => row.id === crew.id);
+        if (idx < 0) this.crews.push(crew);
+        else if (crew.lastGpsAt > this.crews[idx].lastGpsAt) this.crews[idx] = crew;
+      }
+      const eventIds = new Set(this.events.map((event) => event.id));
+      for (const event of live.events ?? []) {
+        if (!eventIds.has(event.id)) this.events.push(event);
+      }
+      const auditIds = new Set(this.audit.map((row) => row.eventId));
+      for (const row of live.audit ?? []) {
+        if (!auditIds.has(row.eventId)) this.audit.push(row);
+      }
+      this.diskMtime = mtime;
+    } catch {
+      /* keep the in-memory floor */
+    }
+  }
+
   private writeLive() {
+    this.absorbNewerDisk();
     const body: LiveFloorFile = {
       version: 1,
       users: this.users,
@@ -949,6 +1022,7 @@ class ElectroRaidStore {
     try {
       fs.mkdirSync(path.dirname(LIVE_PATH), { recursive: true });
       fs.writeFileSync(LIVE_PATH, JSON.stringify(body));
+      this.diskMtime = fs.statSync(LIVE_PATH).mtimeMs;
     } catch {
       /* the in-memory floor still serves this process */
     }
@@ -999,6 +1073,7 @@ class ElectroRaidStore {
       this.audit = live.audit ?? [];
       this.events = live.events ?? [];
       this.provisioned = live.provisioned ?? [];
+      this.diskMtime = fs.statSync(LIVE_PATH).mtimeMs;
     } catch {
       /* keep the sign-in floor if the file is unreadable */
     }
@@ -1404,13 +1479,13 @@ class ElectroRaidStore {
   }
 }
 
-const globalForStore = globalThis as unknown as { __electroraid_v4?: ElectroRaidStore };
+const globalForStore = globalThis as unknown as { __electroraid_v5?: ElectroRaidStore };
 
 export function getStore(): ElectroRaidStore {
-  if (!globalForStore.__electroraid_v4) {
-    globalForStore.__electroraid_v4 = new ElectroRaidStore();
+  if (!globalForStore.__electroraid_v5) {
+    globalForStore.__electroraid_v5 = new ElectroRaidStore();
   }
-  return globalForStore.__electroraid_v4;
+  return globalForStore.__electroraid_v5;
 }
 
 export { hoursAgo };

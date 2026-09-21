@@ -38,6 +38,7 @@ export function CommandMap({
   const elRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
   const layersRef = useRef<import("leaflet").LayerGroup | null>(null);
+  const fittedKey = useRef("");
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
   const [mapReady, setMapReady] = useState(false);
@@ -191,6 +192,35 @@ export function CommandMap({
         map.flyTo([selected.location.lat, selected.location.lon], 14, {
           duration: 0.8,
         });
+      } else if (map) {
+        const open = incidents.filter(
+          (incident) => incident.status !== "resolved" && incident.status !== "closed",
+        );
+        const openCases = (showInvestigations ? investigations : []).filter(
+          (investigation) =>
+            investigation.status !== "closed_recovered" &&
+            investigation.status !== "closed_no_finding",
+        );
+        const fitKey = [
+          ...open.map((incident) => incident.id),
+          ...openCases.map((investigation) => investigation.id),
+        ]
+          .sort()
+          .join("|");
+        const points: [number, number][] = [
+          ...open.map((incident) => [incident.location.lat, incident.location.lon] as [number, number]),
+          ...openCases.map(
+            (investigation) =>
+              [investigation.location.lat, investigation.location.lon] as [number, number],
+          ),
+        ];
+        if (points.length > 0 && fittedKey.current !== fitKey) {
+          fittedKey.current = fitKey;
+          const bounds = L.latLngBounds(points);
+          if (bounds.isValid()) {
+            map.fitBounds(bounds.pad(0.4), { maxZoom: 14, animate: true });
+          }
+        }
       }
     });
     return () => {
