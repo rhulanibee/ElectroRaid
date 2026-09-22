@@ -15,6 +15,7 @@ import {
   relativeMinutes,
 } from "@/lib/format";
 import { usePlatform, postJson } from "@/lib/use-platform";
+import { useSession } from "@/lib/use-session";
 import { recommendCrews } from "@/lib/engines/dispatch";
 import { TrackLiveMap } from "@/components/track-live-map";
 import type {
@@ -27,7 +28,9 @@ import type {
 
 export function CommandCenter() {
   const { snapshot, roi, liveEvent, error } = usePlatform();
+  const { persona } = useSession();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [autoBusy, setAutoBusy] = useState(false);
 
   const selectedIncident = snapshot?.incidents.find((i) => i.id === selectedId);
   const selectedInv = snapshot?.investigations.find((i) => i.id === selectedId);
@@ -44,6 +47,19 @@ export function CommandCenter() {
   const awaitingResident = (snapshot?.incidents ?? []).filter(
     (i) => i.status === "resolved",
   );
+  const autoOn = Boolean(snapshot?.autoDispatchEnabled);
+
+  async function toggleAutoAssign() {
+    setAutoBusy(true);
+    try {
+      await postJson("/api/dispatch/auto", {
+        enabled: !autoOn,
+        actorId: persona?.id,
+      });
+    } finally {
+      setAutoBusy(false);
+    }
+  }
 
   if (error && !snapshot) {
     return (
@@ -92,10 +108,38 @@ export function CommandCenter() {
 
       <aside className="flex min-h-0 flex-col border-t border-border lg:border-t-0 lg:border-l">
         <div className="border-b border-border px-3 py-2">
-          <div className="text-xs font-medium">Work queue</div>
-          <div className="text-muted-foreground text-[11px]">
-            Coloured dots match the map. 500 m / 2 h nearby reports merge into one ticket.
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-xs font-medium">Work queue</div>
+              <div className="text-muted-foreground text-[11px]">
+                Coloured dots match the map. 500 m / 2 h nearby reports merge into
+                one ticket.
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={autoBusy}
+              onClick={() => toggleAutoAssign()}
+              className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-wide uppercase transition ${
+                autoOn
+                  ? "bg-[#24A148] text-white"
+                  : "border border-border bg-background text-muted-foreground hover:border-[#24A148] hover:text-[#24A148]"
+              } disabled:opacity-60`}
+              title={
+                autoOn
+                  ? "Auto-assign is on — tap to switch to manual"
+                  : "Turn on auto-assign — best crew gets open tickets"
+              }
+            >
+              {autoBusy ? "…" : autoOn ? "Auto on" : "Auto off"}
+            </button>
           </div>
+          {autoOn ? (
+            <p className="text-muted-foreground mt-1.5 text-[11px] leading-snug">
+              Automation is assigning the best available crew to open tickets.
+              Turn off anytime to assign by hand.
+            </p>
+          ) : null}
         </div>
 
         <QueueKey />

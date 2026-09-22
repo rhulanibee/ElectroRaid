@@ -178,8 +178,12 @@ CREATE TABLE IF NOT EXISTS staff_provisions (
 
 CREATE TABLE IF NOT EXISTS floor_meta (
   id              INTEGER PRIMARY KEY CHECK (id = 1),
-  floor_revision  INTEGER NOT NULL
+  floor_revision  INTEGER NOT NULL,
+  auto_dispatch   BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+-- Existing projects: add the auto-dispatch flag if the table already existed.
+ALTER TABLE floor_meta ADD COLUMN IF NOT EXISTS auto_dispatch BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- The Next.js server signs in with the publishable key (anon).
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;

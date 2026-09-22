@@ -21,18 +21,18 @@ export function CityscapeBackdrop({
   alt?: string;
 }) {
   return (
-    <div className={cn("relative overflow-hidden bg-[#1a1f1c]", className ?? "min-h-dvh")}>
+    <div className={cn("relative bg-[#1a1f1c]", className ?? "min-h-dvh")}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
         alt={alt}
-        className="absolute inset-0 h-full w-full object-cover"
+        className="pointer-events-none fixed inset-0 z-0 h-dvh w-full object-cover"
         onError={(e) => {
           e.currentTarget.onerror = null;
           e.currentTarget.src = WIKI_HERO;
         }}
       />
-      {dim ? <div className="hero-scrim absolute inset-0" /> : null}
+      {dim ? <div className="hero-scrim pointer-events-none fixed inset-0 z-0" /> : null}
       <div className="relative z-10">{children}</div>
     </div>
   );

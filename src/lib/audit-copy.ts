@@ -98,6 +98,20 @@ export function auditStory(row: AuditLog): AuditStory {
         ticket: reference,
         kind,
       };
+    case "AUTO_DISPATCH_ENABLED":
+      return {
+        title: "Auto-assign turned on",
+        detail: "Open tickets will get the best available crew automatically.",
+        ticket: null,
+        kind: "system",
+      };
+    case "AUTO_DISPATCH_DISABLED":
+      return {
+        title: "Auto-assign turned off",
+        detail: "New tickets wait for a manual assign from the control room.",
+        ticket: null,
+        kind: "system",
+      };
     case "TECHNICIAN_WORK_COMPLETED":
       return {
         title: "Technician finished the repair",

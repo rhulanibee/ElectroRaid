@@ -291,6 +291,8 @@ export interface PlatformSnapshot {
   weights: PriorityWeights;
   /** Increases when a ticket is filed or updated. GPS ticks do not change it. */
   floorRevision: number;
+  /** Dispatcher toggle: auto-assign best crew to open tickets. */
+  autoDispatchEnabled: boolean;
 }
 
 export const DEDUP_RADIUS_M = 500;

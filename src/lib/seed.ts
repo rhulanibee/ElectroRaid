@@ -182,5 +182,6 @@ export function seedPlatform(): PlatformSnapshot {
       wElapsed: 1.8,
     },
     floorRevision: 0,
+    autoDispatchEnabled: false,
   };
 }

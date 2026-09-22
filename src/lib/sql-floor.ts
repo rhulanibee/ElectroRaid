@@ -36,6 +36,7 @@ export interface SqlFloor {
   removedIds: string[];
   floorRevision: number;
   weights: PriorityWeights;
+  autoDispatchEnabled?: boolean;
 }
 
 let client: SupabaseClient | null = null;
@@ -187,6 +188,7 @@ export async function loadFloor(): Promise<SqlFloor | null> {
     provisioned: provisioned.map(mapProvision),
     removedIds: removed.map((row) => String(row.user_id)),
     floorRevision: num(meta[0]?.floor_revision ?? 0),
+    autoDispatchEnabled: Boolean(meta[0]?.auto_dispatch ?? false),
     weights: {
       wHouseholds: num(weights[0]?.w_households ?? 12),
       wCritical: num(weights[0]?.w_critical ?? 280),
@@ -442,9 +444,20 @@ async function writeFloor(
       w_elapsed: floor.weights.wElapsed,
     },
   ]);
-  await upsertRows("floor_meta", [
-    { id: 1, floor_revision: floor.floorRevision },
-  ]);
+  try {
+    await upsertRows("floor_meta", [
+      {
+        id: 1,
+        floor_revision: floor.floorRevision,
+        auto_dispatch: Boolean(floor.autoDispatchEnabled),
+      },
+    ]);
+  } catch {
+    // Older Supabase projects without auto_dispatch column.
+    await upsertRows("floor_meta", [
+      { id: 1, floor_revision: floor.floorRevision },
+    ]);
+  }
 
   // Prune rows that were removed from the live floor.
   await deleteMissing(

@@ -72,6 +72,8 @@ function applySnapshot(
       (row) => row.id,
       (row) => row.closedAt ?? row.dispatchedAt ?? row.createdAt,
     ),
+    autoDispatchEnabled:
+      next.autoDispatchEnabled ?? prev.autoDispatchEnabled ?? false,
     floorRevision: nextRev,
   };
 }

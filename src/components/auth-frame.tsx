@@ -14,8 +14,8 @@ export function AuthFrame({
 }) {
   return (
     <CityscapeBackdrop>
-      <div className="flex min-h-dvh justify-center overflow-y-auto px-4 py-6">
-        <div className="auth-card my-auto w-full max-w-[440px] rounded-2xl bg-white p-6 md:p-8">
+      <div className="flex min-h-dvh justify-center px-4 py-8 sm:py-10">
+        <div className="auth-card my-auto w-full max-w-[440px] rounded-2xl bg-white/95 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.28)] backdrop-blur-sm md:p-8">
           <BrandLogo stacked className="mb-4" />
           <h1 className="font-heading text-center text-2xl font-bold tracking-tight text-[#121417]">
             {title}

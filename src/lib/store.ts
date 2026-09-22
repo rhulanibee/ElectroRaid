@@ -87,6 +87,7 @@ interface LiveFloorFile {
   removedIds: string[];
   floorRevision?: number;
   weights?: PlatformSnapshot["weights"];
+  autoDispatchEnabled?: boolean;
 }
 
 class ElectroRaidStore {
@@ -115,6 +116,9 @@ class ElectroRaidStore {
   private floorRevision = 0;
   /** True after the Postgres floor has been loaded or seeded. */
   private sqlOn = false;
+  /** Dispatcher toggle: assign the best crew without a manual tap. */
+  private autoDispatchEnabled = false;
+  private autoDispatchTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.hydrate(true);
@@ -177,8 +181,10 @@ class ElectroRaidStore {
     this.provisioned = live.provisioned ?? [];
     this.removedIds = live.removedIds ?? [];
     this.floorRevision = live.floorRevision ?? 0;
+    this.autoDispatchEnabled = Boolean(live.autoDispatchEnabled);
     if (live.weights) this.weights = { ...live.weights };
     this.bootChases();
+    this.syncAutoDispatchTimer();
   }
 
   private toLiveFile(): LiveFloorFile {
@@ -198,6 +204,7 @@ class ElectroRaidStore {
       removedIds: this.removedIds,
       floorRevision: this.floorRevision,
       weights: this.weights,
+      autoDispatchEnabled: this.autoDispatchEnabled,
     };
   }
 
@@ -217,6 +224,8 @@ class ElectroRaidStore {
     this.weights = { ...DEFAULT_WEIGHTS };
     this.provisioned = [];
     this.removedIds = [];
+    this.autoDispatchEnabled = false;
+    this.stopAutoDispatchTimer();
     if (restore) this.readLive();
     else {
       this.deleteLive();
@@ -264,6 +273,7 @@ class ElectroRaidStore {
       events: [...this.events].reverse(),
       weights: this.weights,
       floorRevision: this.floorRevision,
+      autoDispatchEnabled: this.autoDispatchEnabled,
     };
   }
 
@@ -336,6 +346,7 @@ class ElectroRaidStore {
       entityId: result.incident.id,
     });
 
+    this.maybeAutoDispatch();
     return { kind: "outage" as const, ...result };
   }
 
@@ -459,6 +470,7 @@ class ElectroRaidStore {
       entityId: ticket.id,
     });
 
+    this.maybeAutoDispatch();
     return { kind: "tip" as const, investigation: ticket, merged: false };
   }
 
@@ -520,6 +532,103 @@ class ElectroRaidStore {
     const target = this.jobLocation(kind, targetId);
     if (!target) return [];
     return recommendCrews(this.crews, this.users, target.location, kind);
+  }
+
+  /** Dispatcher turns automatic crew assignment on or off. */
+  setAutoDispatch(enabled: boolean, actorId?: string) {
+    const next = Boolean(enabled);
+    if (this.autoDispatchEnabled === next) {
+      return { enabled: this.autoDispatchEnabled, assigned: 0 };
+    }
+    this.autoDispatchEnabled = next;
+    const actor =
+      this.users.find((user) => user.id === actorId) ??
+      this.users.find((user) => user.role === "dispatcher") ??
+      this.systemUser();
+    this.recordAudit({
+      actorId: actor.id,
+      actorRole: actor.role === "system" ? "system" : "dispatcher",
+      actionType: next ? "AUTO_DISPATCH_ENABLED" : "AUTO_DISPATCH_DISABLED",
+      entityType: "platform",
+      entityId: "auto_dispatch",
+      location: null,
+      payload: { enabled: next },
+    });
+    this.emit({
+      type: next ? "dispatch.auto_on" : "dispatch.auto_off",
+      title: next ? "Auto-assign turned on" : "Auto-assign turned off",
+      detail: next
+        ? "Open tickets will get the best available crew automatically."
+        : "New tickets wait for a manual assign from the control room.",
+      severity: "info",
+    });
+    this.syncAutoDispatchTimer();
+    const assigned = next ? this.runAutoDispatch() : 0;
+    this.scheduleSave();
+    return { enabled: this.autoDispatchEnabled, assigned };
+  }
+
+  /** Assign best crews to every open ticket that still needs one. */
+  runAutoDispatch() {
+    if (!this.autoDispatchEnabled) return 0;
+    let assigned = 0;
+    const openOutages = [...this.incidents]
+      .filter(
+        (incident) =>
+          !incident.assignedCrewId &&
+          incident.status !== "resolved" &&
+          incident.status !== "closed",
+      )
+      .sort((a, b) => b.priorityScore - a.priorityScore);
+    for (const incident of openOutages) {
+      try {
+        this.dispatch("outage", incident.id);
+        assigned += 1;
+      } catch {
+        /* no matching available crew — leave ticket in Needs a crew */
+      }
+    }
+    const openInvestigations = [...this.investigations]
+      .filter(
+        (item) =>
+          !item.assignedCrewId &&
+          item.status !== "closed_recovered" &&
+          item.status !== "closed_no_finding",
+      )
+      .sort((a, b) => b.anomalyRiskScore - a.anomalyRiskScore);
+    for (const item of openInvestigations) {
+      try {
+        this.dispatch("investigation", item.id);
+        assigned += 1;
+      } catch {
+        /* no inspector available */
+      }
+    }
+    return assigned;
+  }
+
+  private maybeAutoDispatch() {
+    if (!this.autoDispatchEnabled) return;
+    this.runAutoDispatch();
+  }
+
+  private syncAutoDispatchTimer() {
+    this.stopAutoDispatchTimer();
+    if (!this.autoDispatchEnabled) return;
+    this.autoDispatchTimer = setInterval(() => {
+      try {
+        this.runAutoDispatch();
+      } catch {
+        /* keep the timer alive */
+      }
+    }, 12_000);
+  }
+
+  private stopAutoDispatchTimer() {
+    if (this.autoDispatchTimer) {
+      clearInterval(this.autoDispatchTimer);
+      this.autoDispatchTimer = null;
+    }
   }
 
   dispatch(kind: JobKind, targetId: string, crewId?: string) {
@@ -1198,6 +1307,10 @@ class ElectroRaidStore {
         if (!provisionedIds.has(person.id)) this.provisioned.push(person);
       }
       this.floorRevision = Math.max(this.floorRevision, live.floorRevision ?? 0);
+      if (typeof live.autoDispatchEnabled === "boolean") {
+        this.autoDispatchEnabled = live.autoDispatchEnabled;
+        this.syncAutoDispatchTimer();
+      }
       this.diskMtime = mtime;
     } catch {
       /* keep the in-memory floor */
@@ -1272,6 +1385,10 @@ class ElectroRaidStore {
       this.events = live.events ?? [];
       this.provisioned = live.provisioned ?? [];
       this.floorRevision = live.floorRevision ?? 0;
+      if (typeof live.autoDispatchEnabled === "boolean") {
+        this.autoDispatchEnabled = live.autoDispatchEnabled;
+        this.syncAutoDispatchTimer();
+      }
       this.diskMtime = fs.statSync(LIVE_PATH).mtimeMs;
     } catch {
       /* keep the sign-in floor if the file is unreadable */
