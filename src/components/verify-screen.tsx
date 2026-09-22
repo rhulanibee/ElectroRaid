@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileUp } from "lucide-react";
 import { AuthFrame, authPrimaryClass } from "@/components/auth-frame";
+import { ButtonSpinner, pressLockProps } from "@/components/ui/button-spinner";
 import { useSession } from "@/lib/use-session";
 import { goReplace } from "@/lib/hard-nav";
 
@@ -11,6 +12,7 @@ export function VerifyScreen() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
+  const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export function VerifyScreen() {
       setError("Choose a document before continuing.");
       return;
     }
+    setBusy(true);
     completeVerification(fileName);
     goReplace("/resident");
   }
@@ -103,8 +106,13 @@ export function VerifyScreen() {
           onChange={(e) => takeFile(e.target.files?.[0])}
         />
         {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
-        <button type="submit" className={authPrimaryClass}>
-          Confirm
+        <button
+          type="submit"
+          className={authPrimaryClass}
+          disabled={busy}
+          {...pressLockProps(busy)}
+        >
+          {busy ? <ButtonSpinner label="Confirming…" /> : "Confirm"}
         </button>
       </form>
     </AuthFrame>

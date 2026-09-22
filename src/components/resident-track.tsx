@@ -6,11 +6,12 @@ import {
   technicianNameForCrew,
 } from "@/components/track-live-map";
 import { SeverityBadge, StatusBadge } from "@/components/status-badge";
-import { ButtonSpinner } from "@/components/ui/button-spinner";
+import { ButtonSpinner, pressLock, pressLockProps } from "@/components/ui/button-spinner";
 import { postJson, usePlatform } from "@/lib/use-platform";
 import { useSession } from "@/lib/use-session";
 import { classificationLabel, relativeMinutes } from "@/lib/format";
 import type { MasterIncident } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 export function ResidentTrack() {
   const { persona } = useSession();
@@ -232,7 +233,12 @@ export function ResidentTrack() {
                     type="button"
                     disabled={busy !== null || !ackLights}
                     onClick={() => confirm(selected.id)}
-                    className="inline-flex h-11 items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
+                    {...pressLockProps(busy === "confirm")}
+                    className={cn(
+                      "inline-flex h-11 items-center justify-center rounded-xl text-sm font-semibold",
+                      pressLock.base,
+                      pressLock.primary,
+                    )}
                   >
                     {busy === "confirm" ? (
                       <ButtonSpinner label="Confirming…" />
@@ -244,7 +250,12 @@ export function ResidentTrack() {
                     type="button"
                     disabled={busy !== null}
                     onClick={() => dispute(selected.id)}
-                    className="inline-flex h-11 items-center justify-center rounded-xl bg-[#DC2626] text-sm font-semibold text-white hover:bg-[#B91C1C] disabled:opacity-60"
+                    {...pressLockProps(busy === "dispute")}
+                    className={cn(
+                      "inline-flex h-11 items-center justify-center rounded-xl text-sm font-semibold",
+                      pressLock.base,
+                      pressLock.danger,
+                    )}
                   >
                     {busy === "dispute" ? (
                       <ButtonSpinner label="Sending…" />

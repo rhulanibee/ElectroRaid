@@ -49,4 +49,4 @@ export const authControlClass =
   "h-11 w-full rounded-xl border border-[#E5E7EB] bg-white px-3.5 text-sm text-[#121417] placeholder:text-[#9CA3AF] outline-none transition focus:border-[#24A148] focus:ring-3 focus:ring-[#24A148]/20";
 
 export const authPrimaryClass =
-  "inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#24A148] px-4 text-sm font-semibold text-white transition hover:bg-[#1e8a3c] disabled:opacity-60";
+  "inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#24A148] px-4 text-sm font-semibold text-white transition-all hover:bg-[#1e8a3c] disabled:pointer-events-none disabled:opacity-60 data-[loading]:cursor-wait data-[loading]:scale-[0.98] data-[loading]:bg-[#1a7a36] data-[loading]:hover:bg-[#1a7a36] data-[loading]:shadow-inner data-[loading]:opacity-100";

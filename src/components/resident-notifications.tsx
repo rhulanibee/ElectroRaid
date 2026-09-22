@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ButtonSpinner } from "@/components/ui/button-spinner";
+import { ButtonSpinner, pressLock, pressLockProps } from "@/components/ui/button-spinner";
 import { formatWhen, relativeMinutes } from "@/lib/format";
 import { pointForSuburb } from "@/lib/geo";
 import { go } from "@/lib/hard-nav";
@@ -9,6 +9,7 @@ import { noticeLabel } from "@/lib/resident-notices";
 import { postJson, usePlatform } from "@/lib/use-platform";
 import { useResidentNotices } from "@/lib/use-resident-notices";
 import { useSession } from "@/lib/use-session";
+import { cn } from "@/lib/utils";
 
 export function ResidentNotifications() {
   const { persona } = useSession();
@@ -140,7 +141,12 @@ export function ResidentNotifications() {
                       type="button"
                       disabled={busy}
                       onClick={() => joinSame(notice.entityId!, notice.id)}
-                      className="inline-flex h-10 items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
+                      {...pressLockProps(busy)}
+                      className={cn(
+                        "inline-flex h-10 items-center justify-center rounded-xl text-sm font-semibold",
+                        pressLock.base,
+                        pressLock.primary,
+                      )}
                     >
                       {busy ? (
                         <ButtonSpinner label="Joining…" />
@@ -155,7 +161,11 @@ export function ResidentNotifications() {
                         dismissNotice(notice.id);
                         setMessage("Noted. We will not add you to that ticket.");
                       }}
-                      className="inline-flex h-10 items-center justify-center rounded-xl border border-[#E5E7EB] bg-white text-sm font-semibold text-[#374151] hover:bg-[#F3F5F4] disabled:opacity-60"
+                      className={cn(
+                        "inline-flex h-10 items-center justify-center rounded-xl text-sm font-semibold",
+                        pressLock.base,
+                        pressLock.outline,
+                      )}
                     >
                       No — not me
                     </button>

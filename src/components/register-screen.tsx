@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AuthField, AuthFrame, authControlClass, authPrimaryClass } from "@/components/auth-frame";
-import { ButtonSpinner } from "@/components/ui/button-spinner";
+import { ButtonSpinner, pressLockProps } from "@/components/ui/button-spinner";
 import { GoogleSignInButton } from "@/components/google-sign-in";
 import { afterLoginPath, useSession } from "@/lib/use-session";
 import { go, goReplace } from "@/lib/hard-nav";
@@ -116,7 +116,12 @@ export function RegisterScreen() {
           />
         </AuthField>
         {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
-        <button type="submit" className={authPrimaryClass} disabled={busy !== null}>
+        <button
+          type="submit"
+          className={authPrimaryClass}
+          disabled={busy !== null}
+          {...pressLockProps(busy === "form")}
+        >
           {busy === "form" ? <ButtonSpinner label="Creating account…" /> : "Register"}
         </button>
       </form>

@@ -127,11 +127,26 @@ class ElectroRaidStore {
   /** Load the Postgres floor, or seed it from the current memory on first run. */
   async attachSql() {
     try {
-      const { enableSqlSaves, loadFloor, seedFloor, supabaseConfigured } = await import("./sql-floor");
+      const {
+        enableSqlSaves,
+        floorIsPopulated,
+        loadFloor,
+        seedFloor,
+        supabaseConfigured,
+      } = await import("./sql-floor");
       if (!supabaseConfigured()) return;
-      const live = await loadFloor();
-      if (live && live.users.length > 0) this.replaceFloor(live);
-      else {
+
+      let live = await loadFloor();
+      // Brief retry: a concurrent save used to clear tables first; avoid
+      // treating a mid-write empty read as "brand new database".
+      if (!floorIsPopulated(live)) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        live = await loadFloor();
+      }
+
+      if (floorIsPopulated(live)) {
+        this.replaceFloor(live!);
+      } else {
         await seedFloor({
           ...this.toLiveFile(),
           feeders: this.feeders,
@@ -203,7 +218,11 @@ class ElectroRaidStore {
     this.provisioned = [];
     this.removedIds = [];
     if (restore) this.readLive();
-    else this.deleteLive();
+    else {
+      this.deleteLive();
+      // Beat any older Supabase floor_revision so the clear actually persists.
+      this.floorRevision = Math.max(this.floorRevision + 1, Date.now());
+    }
     for (const person of this.provisioned) {
       this.insertStaff(person, false);
     }

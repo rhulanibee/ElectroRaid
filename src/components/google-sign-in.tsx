@@ -1,6 +1,6 @@
 "use client";
 
-import { ButtonSpinner } from "@/components/ui/button-spinner";
+import { ButtonSpinner, pressLock, pressLockProps } from "@/components/ui/button-spinner";
 import { cn } from "@/lib/utils";
 
 function GoogleGlyph({ className }: { className?: string }) {
@@ -37,12 +37,18 @@ export function GoogleSignInButton({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const locked = loading;
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled || loading}
-      className="flex h-11 w-full items-center justify-center gap-3 rounded-xl border border-[#E5E7EB] bg-white text-sm font-semibold text-[#121417] shadow-sm transition hover:bg-[#F7F8F7] disabled:opacity-60"
+      {...pressLockProps(locked)}
+      className={cn(
+        "flex h-11 w-full items-center justify-center gap-3 rounded-xl text-sm font-semibold shadow-sm",
+        pressLock.base,
+        pressLock.outline,
+      )}
     >
       {loading ? (
         <ButtonSpinner label="Signing in…" />

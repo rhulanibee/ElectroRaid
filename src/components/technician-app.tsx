@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Lightbulb } from "lucide-react";
 import { priorityBand } from "@/lib/engines/priority";
 import { Button } from "@/components/ui/button";
+import { ButtonSpinner, pressLock, pressLockProps } from "@/components/ui/button-spinner";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { evidenceSvg } from "@/lib/evidence";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/repair-photo";
 import { CommandMap } from "@/components/command-map";
 import { TrackLiveMap, navigateUrl, technicianNameForCrew } from "@/components/track-live-map";
+import { cn } from "@/lib/utils";
 import { distanceMetres, formatKm, etaMinutes } from "@/lib/geo";
 import type { FieldCrew, MasterIncident } from "@/lib/types";
 
@@ -52,16 +54,27 @@ export function TechnicianApp() {
     );
   }, [online, snapshot]);
 
-  const crew =
-    snapshot?.crews.find((c) => c.userId === persona?.id) ??
-    snapshot?.crews.find((c) => c.id === persona?.crewId);
+  const myCrewIds = new Set(
+    [
+      persona?.crewId,
+      ...(snapshot?.crews ?? [])
+        .filter((c) => c.userId === persona?.id)
+        .map((c) => c.id),
+    ].filter((id): id is string => Boolean(id)),
+  );
   const assigned = snapshot?.incidents.find(
     (i) =>
-      Boolean(crew) &&
-      i.assignedCrewId === crew?.id &&
+      Boolean(i.assignedCrewId) &&
+      myCrewIds.has(i.assignedCrewId as string) &&
       i.status !== "resolved" &&
       i.status !== "closed",
   );
+  const crew =
+    (assigned?.assignedCrewId
+      ? snapshot?.crews.find((c) => c.id === assigned.assignedCrewId)
+      : undefined) ??
+    snapshot?.crews.find((c) => c.userId === persona?.id) ??
+    snapshot?.crews.find((c) => c.id === persona?.crewId);
   const pool = useMemo(
     () =>
       (snapshot?.incidents ?? []).filter(
@@ -93,12 +106,17 @@ export function TechnicianApp() {
   }
 
   async function takeJob(incident: MasterIncident) {
+    const crewId = crew?.id ?? persona?.crewId;
+    if (!crewId) {
+      setStatus("No vehicle linked to this technician sign-in.");
+      return;
+    }
     setBusy(`take:${incident.id}`);
     try {
       await postJson("/api/dispatch", {
         kind: "outage",
         targetId: incident.id,
-        crewId: persona?.crewId,
+        crewId,
       });
       setStatus("Job assigned to your van.");
     } finally {
@@ -291,19 +309,26 @@ function IdlePanel({
               key={incident.id}
               type="button"
               disabled={busy !== null}
-              className="w-full rounded-2xl border border-[#E5E7EB] bg-white p-4 text-left shadow-sm hover:border-[#24A148] disabled:opacity-60"
+              {...pressLockProps(taking)}
+              className={cn(
+                "w-full rounded-2xl p-4 text-left shadow-sm",
+                pressLock.base,
+                pressLock.soft,
+              )}
               onClick={() => onTake(incident)}
             >
               <div className="font-mono text-[11px] text-[#6B7280]">{incident.reference}</div>
               <div className="mt-1 text-sm font-semibold">{incident.address}</div>
               <div className="mt-1 text-xs text-[#6B7280]">
-                {taking
-                  ? "Taking this job…"
-                  : `${incident.affectedHouseholds} households${
-                      crew
-                        ? ` · ${formatKm(distanceMetres(crew.location, incident.location))} · ${etaMinutes(distanceMetres(crew.location, incident.location))} min`
-                        : ""
-                    } · Take this job`}
+                {taking ? (
+                  <ButtonSpinner label="Taking this job…" />
+                ) : (
+                  `${incident.affectedHouseholds} households${
+                    crew
+                      ? ` · ${formatKm(distanceMetres(crew.location, incident.location))} · ${etaMinutes(distanceMetres(crew.location, incident.location))} min`
+                      : ""
+                  } · Take this job`
+                )}
               </div>
               {crew ? (
                 <a

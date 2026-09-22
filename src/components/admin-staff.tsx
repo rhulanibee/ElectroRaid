@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ButtonSpinner } from "@/components/ui/button-spinner";
+import { ButtonSpinner, pressLock, pressLockProps } from "@/components/ui/button-spinner";
 import { roleLabel } from "@/lib/format";
 import {
   addStaffAccount,
@@ -12,6 +12,7 @@ import {
   type StaffDraft,
 } from "@/lib/staff";
 import type { StaffRole } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const EMPTY: StaffDraft = {
   firstName: "",
@@ -227,7 +228,12 @@ export function AdminStaff() {
           <button
             type="submit"
             disabled={busy !== null}
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-[#24A148] px-4 text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
+            {...pressLockProps(busy === "save")}
+            className={cn(
+              "inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-semibold",
+              pressLock.base,
+              pressLock.primary,
+            )}
           >
             {busy === "save" ? (
               <ButtonSpinner label={editingId ? "Saving…" : "Adding…"} />
@@ -281,7 +287,12 @@ export function AdminStaff() {
                   type="button"
                   disabled={busy !== null}
                   onClick={() => remove(row.persona.id, row.persona.name)}
-                  className="inline-flex h-9 items-center rounded-xl border border-[#FECACA] px-3 text-sm font-semibold text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-60"
+                  {...pressLockProps(busy === `remove:${row.persona.id}`)}
+                  className={cn(
+                    "inline-flex h-9 items-center rounded-xl px-3 text-sm font-semibold",
+                    pressLock.base,
+                    pressLock.dangerOutline,
+                  )}
                 >
                   {busy === `remove:${row.persona.id}` ? (
                     <ButtonSpinner label="Removing…" />

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ButtonSpinner } from "@/components/ui/button-spinner";
+import { ButtonSpinner, pressLock, pressLockProps } from "@/components/ui/button-spinner";
 import { postJson } from "@/lib/use-platform";
 import { useSession } from "@/lib/use-session";
 import { go } from "@/lib/hard-nav";
+import { cn } from "@/lib/utils";
 
 export function ResidentSettings() {
   const { persona, logout, updateProfile } = useSession();
@@ -150,7 +151,12 @@ export function ResidentSettings() {
         <button
           type="submit"
           disabled={busy}
-          className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
+          {...pressLockProps(busy)}
+          className={cn(
+            "inline-flex h-11 w-full items-center justify-center rounded-xl text-sm font-semibold",
+            pressLock.base,
+            pressLock.primary,
+          )}
         >
           {busy ? <ButtonSpinner label="Saving…" /> : "Save details"}
         </button>

@@ -17,6 +17,7 @@ export function FieldApp() {
   const [online, setOnline] = useState(true);
   const [queued, setQueued] = useState(0);
   const [note, setNote] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const sync = () => setOnline(navigator.onLine);
@@ -47,25 +48,36 @@ export function FieldApp() {
     if (!snapshot || !crew) return null;
     if (role === "technician") {
       const incident = snapshot.incidents.find(
-        (i) => i.assignedCrewId === crew.id && i.status !== "resolved",
+        (i) =>
+          i.assignedCrewId === crew.id &&
+          i.status !== "resolved" &&
+          i.status !== "closed",
       );
       return incident ? { kind: "outage" as const, incident } : null;
     }
     const inv = snapshot.investigations.find(
-      (i) => i.assignedCrewId === crew.id && i.status !== "closed_recovered",
+      (i) =>
+        i.assignedCrewId === crew.id &&
+        i.status !== "closed_recovered" &&
+        i.status !== "closed_no_finding",
     );
     return inv ? { kind: "investigation" as const, inv } : null;
   }, [snapshot, crew, role]);
 
-  async function act(payload: Record<string, unknown>) {
-    if (!online) {
-      await enqueue(payload);
-      setQueued(await pendingCount());
-      setNote("Saved to device. Will sync when the radio returns.");
-      return;
+  async function act(key: string, payload: Record<string, unknown>) {
+    setBusy(key);
+    try {
+      if (!online) {
+        await enqueue(payload);
+        setQueued(await pendingCount());
+        setNote("Saved to device. Will sync when the radio returns.");
+        return;
+      }
+      await postJson("/api/field/action", payload);
+      setNote("Logged to the immutable audit chain.");
+    } finally {
+      setBusy(null);
     }
-    await postJson("/api/field/action", payload);
-    setNote("Logged to the immutable audit chain.");
   }
 
   return (
@@ -109,11 +121,16 @@ export function FieldApp() {
       ) : job.kind === "outage" ? (
         <OutageCard
           incident={job.incident}
+          busy={busy}
           onOnSite={() =>
-            act({ action: "onsite", kind: "outage", targetId: job.incident.id })
+            act("onsite", {
+              action: "onsite",
+              kind: "outage",
+              targetId: job.incident.id,
+            })
           }
           onComplete={() =>
-            act({
+            act("complete", {
               action: "complete",
               kind: "outage",
               targetId: job.incident.id,
@@ -124,15 +141,16 @@ export function FieldApp() {
       ) : (
         <InvestigationCard
           inv={job.inv}
+          busy={busy}
           onOnSite={() =>
-            act({
+            act("onsite", {
               action: "onsite",
               kind: "investigation",
               targetId: job.inv.id,
             })
           }
           onEvidence={() =>
-            act({
+            act("evidence", {
               action: "evidence",
               kind: "investigation",
               targetId: job.inv.id,
@@ -144,7 +162,7 @@ export function FieldApp() {
             })
           }
           onFine={() =>
-            act({
+            act("fine", {
               action: "fine",
               kind: "investigation",
               targetId: job.inv.id,
@@ -179,10 +197,12 @@ function EmptyJob({ role }: { role: RoleView }) {
 
 function OutageCard({
   incident,
+  busy,
   onOnSite,
   onComplete,
 }: {
   incident: MasterIncident;
+  busy: string | null;
   onOnSite: () => void;
   onComplete: () => void;
 }) {
@@ -195,11 +215,20 @@ function OutageCard({
         {incident.status.replaceAll("_", " ")}
       </div>
       <div className="mt-4 flex flex-col gap-2">
-        <Button onClick={onOnSite} disabled={incident.status === "on_site"}>
-          Mark on site
+        <Button
+          onClick={onOnSite}
+          loading={busy === "onsite"}
+          disabled={incident.status === "on_site" || busy !== null}
+        >
+          {busy === "onsite" ? "Marking on site…" : "Mark on site"}
         </Button>
-        <Button variant="outline" onClick={onComplete}>
-          Sign off restoration
+        <Button
+          variant="outline"
+          onClick={onComplete}
+          loading={busy === "complete"}
+          disabled={busy !== null}
+        >
+          {busy === "complete" ? "Signing off…" : "Sign off restoration"}
         </Button>
       </div>
     </div>
@@ -208,11 +237,13 @@ function OutageCard({
 
 function InvestigationCard({
   inv,
+  busy,
   onOnSite,
   onEvidence,
   onFine,
 }: {
   inv: RevenueInvestigation;
+  busy: string | null;
   onOnSite: () => void;
   onEvidence: () => void;
   onFine: () => void;
@@ -244,13 +275,30 @@ function InvestigationCard({
         </div>
       ) : null}
       <div className="mt-4 flex flex-col gap-2">
-        <Button onClick={onOnSite}>Arrive on site</Button>
-        <Button variant="outline" onClick={onEvidence}>
-          Capture evidence
+        <Button
+          onClick={onOnSite}
+          loading={busy === "onsite"}
+          disabled={busy !== null}
+        >
+          {busy === "onsite" ? "Arriving…" : "Arrive on site"}
         </Button>
-        <Button variant="secondary" onClick={onFine}>
-          Issue tamper fine
-          {total ? ` · ${formatZar(total)}` : ""}
+        <Button
+          variant="outline"
+          onClick={onEvidence}
+          loading={busy === "evidence"}
+          disabled={busy !== null}
+        >
+          {busy === "evidence" ? "Saving…" : "Capture evidence"}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={onFine}
+          loading={busy === "fine"}
+          disabled={busy !== null}
+        >
+          {busy === "fine"
+            ? "Issuing fine…"
+            : `Issue tamper fine${total ? ` · ${formatZar(total)}` : ""}`}
         </Button>
       </div>
     </div>

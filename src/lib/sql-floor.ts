@@ -127,11 +127,22 @@ export function queueSqlSave(floor: SqlFloor) {
     });
 }
 
+/** True when the loaded floor has enough rows to trust (not a mid-wipe empty read). */
+export function floorIsPopulated(floor: SqlFloor | null | undefined): boolean {
+  if (!floor) return false;
+  return (
+    floor.users.length > 0 ||
+    floor.crews.length > 0 ||
+    floor.incidents.length > 0 ||
+    floor.reports.length > 0 ||
+    floor.investigations.length > 0
+  );
+}
+
 export async function loadFloor(): Promise<SqlFloor | null> {
   if (!supabaseConfigured()) return null;
-  const users = await tableRows("users");
-  if (users.length === 0) return null;
   const [
+    users,
     crews,
     feeders,
     meters,
@@ -146,6 +157,7 @@ export async function loadFloor(): Promise<SqlFloor | null> {
     meta,
     weights,
   ] = await Promise.all([
+    tableRows("users"),
     tableRows("field_crews"),
     tableRows("feeders"),
     tableRows("meters"),
@@ -160,8 +172,7 @@ export async function loadFloor(): Promise<SqlFloor | null> {
     tableRows("floor_meta"),
     tableRows("priority_weights"),
   ]);
-  const weight = weights[0];
-  return {
+  const floor: SqlFloor = {
     version: 1,
     users: users.map(mapUser),
     crews: crews.map(mapCrew),
@@ -177,16 +188,21 @@ export async function loadFloor(): Promise<SqlFloor | null> {
     removedIds: removed.map((row) => String(row.user_id)),
     floorRevision: num(meta[0]?.floor_revision ?? 0),
     weights: {
-      wHouseholds: num(weight?.w_households ?? 12),
-      wCritical: num(weight?.w_critical ?? 280),
-      wElapsed: num(weight?.w_elapsed ?? 1.8),
+      wHouseholds: num(weights[0]?.w_households ?? 12),
+      wCritical: num(weights[0]?.w_critical ?? 280),
+      wElapsed: num(weights[0]?.w_elapsed ?? 1.8),
     },
   };
+  if (!floorIsPopulated(floor) && floor.floorRevision === 0) return null;
+  return floor;
 }
 
 export async function seedFloor(floor: SqlFloor) {
   if (!supabaseConfigured()) return;
-  await writeFloor(floor);
+  // Never overwrite a populated database with a seed snapshot.
+  const existing = await loadFloor();
+  if (floorIsPopulated(existing)) return;
+  await writeFloor(floor, { force: true });
   acceptingSaves = true;
 }
 
@@ -194,230 +210,231 @@ export function enableSqlSaves() {
   if (supabaseConfigured()) acceptingSaves = true;
 }
 
-async function clearTable(table: string, column = "id", mode: "text" | "int" = "text") {
-  const query = db().from(table).delete();
-  const { error } =
-    mode === "int" ? await query.gte(column, 0) : await query.neq(column, "");
-  if (error) throw new Error(`${table} clear: ${error.message}`);
-}
-
-async function insertRows(table: string, rows: Record<string, unknown>[]) {
+async function upsertRows(
+  table: string,
+  rows: Record<string, unknown>[],
+  onConflict = "id",
+) {
   if (!rows.length) return;
   const chunkSize = 100;
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
-    const { error } = await db().from(table).insert(chunk);
-    if (error) throw new Error(`${table} insert: ${error.message}`);
+    const { error } = await db()
+      .from(table)
+      .upsert(chunk, { onConflict, ignoreDuplicates: false });
+    if (error) throw new Error(`${table} upsert: ${error.message}`);
   }
 }
 
-async function writeFloor(floor: SqlFloor) {
-  await clearTable("outage_reports");
-  await clearTable("vending_telemetry_logs");
-  await clearTable("revenue_investigations");
-  await clearTable("master_incidents");
-  await clearTable("meters");
-  await clearTable("field_crews");
-  await clearTable("feeders");
-  await clearTable("users");
-  await clearTable("live_events");
-  await clearTable("removed_staff", "user_id");
-  await clearTable("staff_provisions");
-  await clearTable("immutable_audit_logs", "id", "int");
-  await clearTable("priority_weights", "id", "int");
-  await clearTable("floor_meta", "id", "int");
+async function deleteMissing(
+  table: string,
+  keepIds: string[],
+  column = "id",
+) {
+  if (!keepIds.length) {
+    const query = db().from(table).delete();
+    const { error } =
+      column === "id" && table === "immutable_audit_logs"
+        ? await query.gte(column, 0)
+        : column === "user_id"
+          ? await query.neq(column, "")
+          : await query.neq(column, "");
+    if (error) throw new Error(`${table} clear: ${error.message}`);
+    return;
+  }
+  // PostgREST "not in" list — quote each id.
+  const list = `(${keepIds.map((id) => `"${String(id).replace(/"/g, "")}"`).join(",")})`;
+  const { error } = await db().from(table).delete().not(column, "in", list);
+  if (error) throw new Error(`${table} prune: ${error.message}`);
+}
 
-  await insertRows(
-    "users",
-    floor.users.map((user) => ({
-      id: user.id,
-      employee_no: user.employeeNo,
-      full_name: user.fullName,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      is_active: user.isActive,
-      created_at: user.createdAt,
-    })),
-  );
-  await insertRows(
-    "feeders",
-    floor.feeders.map((feeder) => ({
-      id: feeder.id,
-      code: feeder.code,
-      name: feeder.name,
-      suburb: feeder.suburb,
-      status: feeder.status,
-      lon: feeder.location.lon,
-      lat: feeder.location.lat,
-      updated_at: feeder.updatedAt,
-    })),
-  );
-  await insertRows(
-    "field_crews",
-    floor.crews.map((crew) => ({
-      id: crew.id,
-      user_id: crew.userId,
-      callsign: crew.callsign,
-      specialization: crew.specialization,
-      skill_certifications: crew.skillCertifications,
-      status: crew.status,
-      lon: crew.location.lon,
-      lat: crew.location.lat,
-      vehicle_reg: crew.vehicleReg,
-      active_queue_size: crew.activeQueueSize,
-      last_gps_at: crew.lastGpsAt,
-    })),
-  );
-  await insertRows(
-    "meters",
-    floor.meters.map((meter) => ({
-      id: meter.id,
-      account_number: meter.accountNumber,
-      meter_number: meter.meterNumber,
-      household_name: meter.householdName,
-      address: meter.address,
-      suburb: meter.suburb,
-      lon: meter.location.lon,
-      lat: meter.location.lat,
-      feeder_id: meter.feederId,
-      status: meter.status,
-      tariff_cents_kwh: meter.tariffCentsKwh,
-      installed_at: meter.installedAt,
-      last_purchase_at: meter.lastPurchaseAt,
-    })),
-  );
-  await insertRows(
-    "vending_telemetry_logs",
-    floor.vending.map((vend) => ({
-      id: vend.id,
-      meter_id: vend.meterId,
-      purchased_at: vend.purchasedAt,
-      kwh: vend.kwh,
-      amount_zar: vend.amountZar,
-      vendor_id: vend.vendorId,
-      token_masked: vend.tokenMasked,
-    })),
-  );
-  await insertRows(
-    "master_incidents",
-    floor.incidents.map((incident) => ({
-      id: incident.id,
-      reference: incident.reference,
-      classification: incident.classification,
-      status: incident.status,
-      lon: incident.location.lon,
-      lat: incident.location.lat,
-      address: incident.address,
-      suburb: incident.suburb,
-      feeder_id: incident.feederId,
-      affected_households: incident.affectedHouseholds,
-      critical_infrastructure: incident.criticalInfrastructure,
-      priority_score: incident.priorityScore,
-      assigned_crew_id: incident.assignedCrewId,
-      dispatched_at: incident.dispatchedAt,
-      on_site_at: incident.onSiteAt,
-      resolved_at: incident.resolvedAt,
-      resident_confirmed_at: incident.residentConfirmedAt ?? null,
-      qa_rating: incident.qaRating ?? null,
-      qa_notes: incident.qaNotes ?? null,
-      qa_by: incident.qaBy ?? null,
-      first_reported_at: incident.firstReportedAt,
-      last_activity_at: incident.lastActivityAt,
-    })),
-  );
-  await insertRows(
-    "outage_reports",
-    floor.reports.map((report) => ({
-      id: report.id,
-      master_incident_id: report.masterIncidentId,
-      account_number: report.accountNumber,
-      reporter_name: report.reporterName,
-      contact_phone: report.contactPhone,
-      lon: report.location.lon,
-      lat: report.location.lat,
-      address: report.address,
-      classification: report.classification,
-      channel: report.channel,
-      notes: report.notes,
-      reported_at: report.reportedAt,
-    })),
-  );
-  await insertRows(
-    "revenue_investigations",
-    floor.investigations.map((item) => ({
-      id: item.id,
-      reference: item.reference,
-      type: item.type,
-      status: item.status,
-      meter_id: item.meterId,
-      feeder_id: item.feederId,
-      lon: item.location.lon,
-      lat: item.location.lat,
-      address: item.address,
-      suburb: item.suburb,
-      anomaly_risk_score: item.anomalyRiskScore,
-      days_zero_consumption: item.daysZeroConsumption,
-      assigned_crew_id: item.assignedCrewId,
-      dispatched_at: item.dispatchedAt,
-      on_site_at: item.onSiteAt,
-      fine_amount_zar: item.fineAmountZar,
-      backbill_zar: item.backbillZar,
-      penalty_zar: item.penaltyZar,
-      evidence: item.evidence ?? [],
-      notes: item.notes,
-      created_at: item.createdAt,
-      closed_at: item.closedAt,
-    })),
-  );
-  await insertRows(
-    "immutable_audit_logs",
-    floor.audit.map((row) => ({
-      id: row.id,
-      event_id: row.eventId,
-      actor_id: row.actorId,
-      actor_role: row.actorRole,
-      action_type: row.actionType,
-      entity_type: row.entityType,
-      entity_id: row.entityId,
-      lon: row.location?.lon ?? null,
-      lat: row.location?.lat ?? null,
-      occurred_at: row.occurredAt,
-      payload: row.payload ?? {},
-      prev_hash: row.prevHash,
-      entry_hash: row.entryHash,
-    })),
-  );
-  await insertRows(
-    "live_events",
-    floor.events.map((event) => ({
-      id: event.id,
-      type: event.type,
-      title: event.title,
-      detail: event.detail,
-      at: event.at,
-      severity: event.severity,
-      entity_type: event.entityType ?? null,
-      entity_id: event.entityId ?? null,
-    })),
-  );
-  await insertRows(
-    "removed_staff",
-    floor.removedIds.map((userId) => ({ user_id: userId })),
-  );
-  await insertRows(
-    "staff_provisions",
-    floor.provisioned.map((person) => ({
-      id: person.id,
-      full_name: person.fullName,
-      email: person.email,
-      phone: person.phone,
-      role: person.role,
-      crew_id: person.crewId,
-      callsign: person.callsign,
-    })),
-  );
-  await insertRows("priority_weights", [
+/**
+ * Persist the floor without blanking tables first (upsert, then prune).
+ * Skips if the database already has a newer floor_revision.
+ */
+async function writeFloor(
+  floor: SqlFloor,
+  options: { force?: boolean } = {},
+) {
+  if (!options.force) {
+    try {
+      const meta = await tableRows("floor_meta");
+      const dbRev = num(meta[0]?.floor_revision ?? 0);
+      if (dbRev > floor.floorRevision) return;
+    } catch {
+      /* first save or missing meta — continue */
+    }
+  }
+
+  const users = floor.users.map((user) => ({
+    id: user.id,
+    employee_no: user.employeeNo,
+    full_name: user.fullName,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    is_active: user.isActive,
+    created_at: user.createdAt,
+  }));
+  const feeders = floor.feeders.map((feeder) => ({
+    id: feeder.id,
+    code: feeder.code,
+    name: feeder.name,
+    suburb: feeder.suburb,
+    status: feeder.status,
+    lon: feeder.location.lon,
+    lat: feeder.location.lat,
+    updated_at: feeder.updatedAt,
+  }));
+  const crews = floor.crews.map((crew) => ({
+    id: crew.id,
+    user_id: crew.userId,
+    callsign: crew.callsign,
+    specialization: crew.specialization,
+    skill_certifications: crew.skillCertifications,
+    status: crew.status,
+    lon: crew.location.lon,
+    lat: crew.location.lat,
+    vehicle_reg: crew.vehicleReg,
+    active_queue_size: crew.activeQueueSize,
+    last_gps_at: crew.lastGpsAt,
+  }));
+  const meters = floor.meters.map((meter) => ({
+    id: meter.id,
+    account_number: meter.accountNumber,
+    meter_number: meter.meterNumber,
+    household_name: meter.householdName,
+    address: meter.address,
+    suburb: meter.suburb,
+    lon: meter.location.lon,
+    lat: meter.location.lat,
+    feeder_id: meter.feederId,
+    status: meter.status,
+    tariff_cents_kwh: meter.tariffCentsKwh,
+    installed_at: meter.installedAt,
+    last_purchase_at: meter.lastPurchaseAt,
+  }));
+  const vending = floor.vending.map((vend) => ({
+    id: vend.id,
+    meter_id: vend.meterId,
+    purchased_at: vend.purchasedAt,
+    kwh: vend.kwh,
+    amount_zar: vend.amountZar,
+    vendor_id: vend.vendorId,
+    token_masked: vend.tokenMasked,
+  }));
+  const incidents = floor.incidents.map((incident) => ({
+    id: incident.id,
+    reference: incident.reference,
+    classification: incident.classification,
+    status: incident.status,
+    lon: incident.location.lon,
+    lat: incident.location.lat,
+    address: incident.address,
+    suburb: incident.suburb,
+    feeder_id: incident.feederId,
+    affected_households: incident.affectedHouseholds,
+    critical_infrastructure: incident.criticalInfrastructure,
+    priority_score: incident.priorityScore,
+    assigned_crew_id: incident.assignedCrewId,
+    dispatched_at: incident.dispatchedAt,
+    on_site_at: incident.onSiteAt,
+    resolved_at: incident.resolvedAt,
+    resident_confirmed_at: incident.residentConfirmedAt ?? null,
+    qa_rating: incident.qaRating ?? null,
+    qa_notes: incident.qaNotes ?? null,
+    qa_by: incident.qaBy ?? null,
+    first_reported_at: incident.firstReportedAt,
+    last_activity_at: incident.lastActivityAt,
+  }));
+  const reports = floor.reports.map((report) => ({
+    id: report.id,
+    master_incident_id: report.masterIncidentId,
+    account_number: report.accountNumber,
+    reporter_name: report.reporterName,
+    contact_phone: report.contactPhone,
+    lon: report.location.lon,
+    lat: report.location.lat,
+    address: report.address,
+    classification: report.classification,
+    channel: report.channel,
+    notes: report.notes,
+    reported_at: report.reportedAt,
+  }));
+  const investigations = floor.investigations.map((item) => ({
+    id: item.id,
+    reference: item.reference,
+    type: item.type,
+    status: item.status,
+    meter_id: item.meterId,
+    feeder_id: item.feederId,
+    lon: item.location.lon,
+    lat: item.location.lat,
+    address: item.address,
+    suburb: item.suburb,
+    anomaly_risk_score: item.anomalyRiskScore,
+    days_zero_consumption: item.daysZeroConsumption,
+    assigned_crew_id: item.assignedCrewId,
+    dispatched_at: item.dispatchedAt,
+    on_site_at: item.onSiteAt,
+    fine_amount_zar: item.fineAmountZar,
+    backbill_zar: item.backbillZar,
+    penalty_zar: item.penaltyZar,
+    evidence: item.evidence ?? [],
+    notes: item.notes,
+    created_at: item.createdAt,
+    closed_at: item.closedAt,
+  }));
+  const audit = floor.audit.map((row) => ({
+    id: row.id,
+    event_id: row.eventId,
+    actor_id: row.actorId,
+    actor_role: row.actorRole,
+    action_type: row.actionType,
+    entity_type: row.entityType,
+    entity_id: row.entityId,
+    lon: row.location?.lon ?? null,
+    lat: row.location?.lat ?? null,
+    occurred_at: row.occurredAt,
+    payload: row.payload ?? {},
+    prev_hash: row.prevHash,
+    entry_hash: row.entryHash,
+  }));
+  const events = floor.events.map((event) => ({
+    id: event.id,
+    type: event.type,
+    title: event.title,
+    detail: event.detail,
+    at: event.at,
+    severity: event.severity,
+    entity_type: event.entityType ?? null,
+    entity_id: event.entityId ?? null,
+  }));
+  const removed = floor.removedIds.map((userId) => ({ user_id: userId }));
+  const provisioned = floor.provisioned.map((person) => ({
+    id: person.id,
+    full_name: person.fullName,
+    email: person.email,
+    phone: person.phone,
+    role: person.role,
+    crew_id: person.crewId,
+    callsign: person.callsign,
+  }));
+
+  // Upsert first so readers never see empty tables during a save.
+  await upsertRows("users", users);
+  await upsertRows("feeders", feeders);
+  await upsertRows("field_crews", crews);
+  await upsertRows("meters", meters);
+  await upsertRows("vending_telemetry_logs", vending);
+  await upsertRows("master_incidents", incidents);
+  await upsertRows("outage_reports", reports);
+  await upsertRows("revenue_investigations", investigations);
+  await upsertRows("immutable_audit_logs", audit);
+  await upsertRows("live_events", events);
+  await upsertRows("removed_staff", removed, "user_id");
+  await upsertRows("staff_provisions", provisioned);
+  await upsertRows("priority_weights", [
     {
       id: 1,
       w_households: floor.weights.wHouseholds,
@@ -425,7 +442,60 @@ async function writeFloor(floor: SqlFloor) {
       w_elapsed: floor.weights.wElapsed,
     },
   ]);
-  await insertRows("floor_meta", [{ id: 1, floor_revision: floor.floorRevision }]);
+  await upsertRows("floor_meta", [
+    { id: 1, floor_revision: floor.floorRevision },
+  ]);
+
+  // Prune rows that were removed from the live floor.
+  await deleteMissing(
+    "outage_reports",
+    reports.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "vending_telemetry_logs",
+    vending.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "revenue_investigations",
+    investigations.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "master_incidents",
+    incidents.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "meters",
+    meters.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "field_crews",
+    crews.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "feeders",
+    feeders.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "users",
+    users.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "live_events",
+    events.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "staff_provisions",
+    provisioned.map((row) => String(row.id)),
+  );
+  await deleteMissing(
+    "removed_staff",
+    removed.map((row) => String(row.user_id)),
+    "user_id",
+  );
+  await deleteMissing(
+    "immutable_audit_logs",
+    audit.map((row) => String(row.id)),
+  );
 }
 
 function mapUser(row: Record<string, unknown>): User {

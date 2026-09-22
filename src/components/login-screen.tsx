@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AuthField, AuthFrame, authControlClass, authPrimaryClass } from "@/components/auth-frame";
-import { ButtonSpinner } from "@/components/ui/button-spinner";
+import { ButtonSpinner, pressLock, pressLockProps } from "@/components/ui/button-spinner";
 import { GoogleSignInButton } from "@/components/google-sign-in";
 import { presentStaff, PERSONAS } from "@/lib/session";
 import { afterLoginPath, useSession } from "@/lib/use-session";
@@ -104,7 +104,12 @@ export function LoginScreen() {
           />
         </AuthField>
         {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
-        <button type="submit" className={authPrimaryClass} disabled={busy !== null}>
+        <button
+          type="submit"
+          className={authPrimaryClass}
+          disabled={busy !== null}
+          {...pressLockProps(busy === "form")}
+        >
           {busy === "form" ? <ButtonSpinner label="Signing in…" /> : "Login"}
         </button>
         <p className="text-center text-[11px] text-[#6B7280]">
@@ -152,8 +157,11 @@ export function LoginScreen() {
                 type="button"
                 disabled={busy !== null}
                 onClick={() => staff(p.id)}
+                {...pressLockProps(busy === p.id)}
                 className={cn(
-                  "rounded-xl border border-[#E5E7EB] px-3 py-2 text-left text-sm hover:border-[#24A148] hover:bg-[#E8F6EC] disabled:opacity-60",
+                  "rounded-xl px-3 py-2 text-left text-sm",
+                  pressLock.base,
+                  pressLock.soft,
                 )}
               >
                 {busy === p.id ? (
