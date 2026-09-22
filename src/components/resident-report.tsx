@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { postJson, usePlatform } from "@/lib/use-platform";
 import { useSession } from "@/lib/use-session";
 import { OUTAGE_REPORT_OPTIONS, TIP_REPORT_OPTIONS } from "@/lib/report-options";
@@ -201,11 +202,13 @@ export function ResidentReport() {
             onClick={submit}
             className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
           >
-            {busy
-              ? "Sending…"
-              : mode === "tip"
-                ? "Send anonymous tip"
-                : "Report"}
+            {busy ? (
+              <ButtonSpinner label="Sending…" />
+            ) : mode === "tip" ? (
+              "Send anonymous tip"
+            ) : (
+              "Report"
+            )}
           </button>
           {message ? (
             <div className="rounded-xl bg-[#E8F6EC] px-3 py-2 text-sm text-[#167a34]">

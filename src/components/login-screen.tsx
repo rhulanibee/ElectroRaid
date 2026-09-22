@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AuthField, AuthFrame, authControlClass, authPrimaryClass } from "@/components/auth-frame";
+import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { GoogleSignInButton } from "@/components/google-sign-in";
 import { presentStaff, PERSONAS } from "@/lib/session";
 import { afterLoginPath, useSession } from "@/lib/use-session";
@@ -19,6 +20,7 @@ export function LoginScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [staffOpen, setStaffOpen] = useState(false);
+  const [busy, setBusy] = useState<"form" | "google" | string | null>(null);
 
   useEffect(() => {
     if (queryParam("staff") === "1") setStaffOpen(true);
@@ -28,28 +30,49 @@ export function LoginScreen() {
     goReplace(home);
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!identifier.trim() || !password.trim()) {
       setError("Enter your account number (or email) and password.");
       return;
     }
-    const persona = loginWithPassword(identifier, password);
-    if (!persona) {
-      setError("Account number / email or password is incorrect.");
-      return;
+    setBusy("form");
+    setError(null);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const persona = loginWithPassword(identifier, password);
+      if (!persona) {
+        setError("Account number / email or password is incorrect.");
+        return;
+      }
+      finish(afterLoginPath(persona, queryParam("next")));
+    } finally {
+      setBusy(null);
     }
-    finish(afterLoginPath(persona, queryParam("next")));
   }
 
-  function google() {
-    const persona = loginWithGoogle();
-    if (persona) finish(afterLoginPath(persona, queryParam("next")));
+  async function google() {
+    setBusy("google");
+    setError(null);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const persona = loginWithGoogle();
+      if (persona) finish(afterLoginPath(persona, queryParam("next")));
+    } finally {
+      setBusy(null);
+    }
   }
 
-  function staff(id: string) {
-    const persona = login(id);
-    if (persona) finish(afterLoginPath(persona, queryParam("next")));
+  async function staff(id: string) {
+    setBusy(id);
+    setError(null);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const persona = login(id);
+      if (persona) finish(afterLoginPath(persona, queryParam("next")));
+    } finally {
+      setBusy(null);
+    }
   }
 
   const staffPersonas = PERSONAS.filter(
@@ -81,8 +104,8 @@ export function LoginScreen() {
           />
         </AuthField>
         {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
-        <button type="submit" className={authPrimaryClass}>
-          Login
+        <button type="submit" className={authPrimaryClass} disabled={busy !== null}>
+          {busy === "form" ? <ButtonSpinner label="Signing in…" /> : "Login"}
         </button>
         <p className="text-center text-[11px] text-[#6B7280]">
           Household sign-in: account <span className="font-mono">3218840441</span> ·
@@ -95,7 +118,7 @@ export function LoginScreen() {
         <div className="absolute inset-x-0 top-1/2 border-t border-[#E5E7EB]" />
       </div>
 
-      <GoogleSignInButton onClick={google} />
+      <GoogleSignInButton onClick={google} disabled={busy !== null} loading={busy === "google"} />
 
       <p className="mt-5 text-center text-sm text-[#6B7280]">
         New household?{" "}
@@ -103,6 +126,7 @@ export function LoginScreen() {
           type="button"
           className="font-semibold text-[#24A148] hover:underline"
           onClick={() => go("/register")}
+          disabled={busy !== null}
         >
           Register
         </button>
@@ -126,13 +150,20 @@ export function LoginScreen() {
               <button
                 key={p.id}
                 type="button"
+                disabled={busy !== null}
                 onClick={() => staff(p.id)}
                 className={cn(
-                  "rounded-xl border border-[#E5E7EB] px-3 py-2 text-left text-sm hover:border-[#24A148] hover:bg-[#E8F6EC]",
+                  "rounded-xl border border-[#E5E7EB] px-3 py-2 text-left text-sm hover:border-[#24A148] hover:bg-[#E8F6EC] disabled:opacity-60",
                 )}
               >
-                <div className="font-semibold text-[#121417]">{p.name}</div>
-                <div className="text-xs text-[#6B7280]">{p.title}</div>
+                {busy === p.id ? (
+                  <ButtonSpinner label="Signing in…" />
+                ) : (
+                  <>
+                    <div className="font-semibold text-[#121417]">{p.name}</div>
+                    <div className="text-xs text-[#6B7280]">{p.title}</div>
+                  </>
+                )}
               </button>
             ))}
           </div>

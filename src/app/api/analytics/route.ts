@@ -1,10 +1,10 @@
 import { json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  const store = getStore();
+export async function GET() {
+  const store = await readyStore();
   return json({
     ok: true,
     roi: store.roi(),

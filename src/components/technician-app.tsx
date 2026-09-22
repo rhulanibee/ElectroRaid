@@ -31,6 +31,7 @@ export function TechnicianApp() {
   const [signature, setSignature] = useState<string | null>(null);
   const [photo, setPhoto] = useState<RepairPhoto | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const sync = () => setOnline(navigator.onLine);
@@ -74,15 +75,35 @@ export function TechnicianApp() {
   );
 
   async function act(payload: Record<string, unknown>, successMessage?: string) {
-    const body = { ...payload, actorId: persona?.id };
-    if (!online) {
-      await enqueue(body);
-      setQueued(await pendingCount());
-      setStatus("Saved on this handset. Will sync when coverage returns.");
-      return;
+    const key = String(payload.action ?? "act");
+    setBusy(key);
+    try {
+      const body = { ...payload, actorId: persona?.id };
+      if (!online) {
+        await enqueue(body);
+        setQueued(await pendingCount());
+        setStatus("Saved on this handset. Will sync when coverage returns.");
+        return;
+      }
+      await postJson("/api/field/action", body);
+      setStatus(successMessage ?? "Written to the immutable audit log.");
+    } finally {
+      setBusy(null);
     }
-    await postJson("/api/field/action", body);
-    setStatus(successMessage ?? "Written to the immutable audit log.");
+  }
+
+  async function takeJob(incident: MasterIncident) {
+    setBusy(`take:${incident.id}`);
+    try {
+      await postJson("/api/dispatch", {
+        kind: "outage",
+        targetId: incident.id,
+        crewId: persona?.crewId,
+      });
+      setStatus("Job assigned to your van.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   const vanLine = crew
@@ -165,6 +186,7 @@ export function TechnicianApp() {
               onSignature={setSignature}
               photo={photo}
               onPhoto={setPhoto}
+              busy={busy}
               onOnSite={() =>
                 act({ action: "onsite", kind: "outage", targetId: assigned.id })
               }
@@ -187,13 +209,8 @@ export function TechnicianApp() {
             <IdlePanel
               crew={crew}
               pool={pool}
-              onTake={(incident) =>
-                postJson("/api/dispatch", {
-                  kind: "outage",
-                  targetId: incident.id,
-                  crewId: persona?.crewId,
-                })
-              }
+              busy={busy}
+              onTake={takeJob}
             />
           )}
           {status ? <p className="text-sm font-medium text-[#167a34]">{status}</p> : null}
@@ -230,10 +247,12 @@ function PriorityBulb({ score }: { score: number }) {
 function IdlePanel({
   crew,
   pool,
+  busy,
   onTake,
 }: {
   crew?: FieldCrew;
   pool: MasterIncident[];
+  busy: string | null;
   onTake: (incident: MasterIncident) => void;
 }) {
   return (
@@ -265,21 +284,26 @@ function IdlePanel({
       {pool.length > 0 ? (
         <div className="space-y-2">
           <h2 className="font-heading text-sm font-bold">Unassigned faults near you</h2>
-          {pool.map((incident) => (
+          {pool.map((incident) => {
+            const taking = busy === `take:${incident.id}`;
+            return (
             <button
               key={incident.id}
               type="button"
-              className="w-full rounded-2xl border border-[#E5E7EB] bg-white p-4 text-left shadow-sm hover:border-[#24A148]"
+              disabled={busy !== null}
+              className="w-full rounded-2xl border border-[#E5E7EB] bg-white p-4 text-left shadow-sm hover:border-[#24A148] disabled:opacity-60"
               onClick={() => onTake(incident)}
             >
               <div className="font-mono text-[11px] text-[#6B7280]">{incident.reference}</div>
               <div className="mt-1 text-sm font-semibold">{incident.address}</div>
               <div className="mt-1 text-xs text-[#6B7280]">
-                {incident.affectedHouseholds} households
-                {crew
-                  ? ` · ${formatKm(distanceMetres(crew.location, incident.location))} · ${etaMinutes(distanceMetres(crew.location, incident.location))} min`
-                  : ""}
-                {" · Take this job"}
+                {taking
+                  ? "Taking this job…"
+                  : `${incident.affectedHouseholds} households${
+                      crew
+                        ? ` · ${formatKm(distanceMetres(crew.location, incident.location))} · ${etaMinutes(distanceMetres(crew.location, incident.location))} min`
+                        : ""
+                    } · Take this job`}
               </div>
               {crew ? (
                 <a
@@ -293,7 +317,8 @@ function IdlePanel({
                 </a>
               ) : null}
             </button>
-          ))}
+            );
+          })}
         </div>
       ) : null}
     </>
@@ -307,6 +332,7 @@ function JobCard({
   serial,
   signature,
   photo,
+  busy,
   onNotes,
   onSerial,
   onSignature,
@@ -320,6 +346,7 @@ function JobCard({
   serial: string;
   signature: string | null;
   photo: RepairPhoto | null;
+  busy: string | null;
   onNotes: (v: string) => void;
   onSerial: (v: string) => void;
   onSignature: (v: string) => void;
@@ -349,8 +376,12 @@ function JobCard({
         Open driving directions
       </a>
       <div className="mt-4 flex flex-col gap-2">
-        <Button onClick={onOnSite} disabled={incident.status === "on_site"}>
-          Mark On Site
+        <Button
+          onClick={onOnSite}
+          loading={busy === "onsite"}
+          disabled={incident.status === "on_site" || busy !== null}
+        >
+          {busy === "onsite" ? "Marking on site…" : "Mark On Site"}
         </Button>
         <label className="text-muted-foreground text-[11px]">
           Completion notes
@@ -364,11 +395,11 @@ function JobCard({
         <RepairEvidence value={photo} onChange={onPhoto} />
         <Button
           variant="outline"
-          onClick={() =>
-            onComplete()
-          }
+          loading={busy === "complete"}
+          disabled={busy !== null}
+          onClick={() => onComplete()}
         >
-          Sign off restoration
+          {busy === "complete" ? "Signing off…" : "Sign off restoration"}
         </Button>
         <p className="text-muted-foreground text-[10px]">
           Closure photo is attached automatically. Serial and signature hash

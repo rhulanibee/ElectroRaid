@@ -1,5 +1,5 @@
 import { fail, json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     if (!body.userId || !body.fullName || !body.email) {
       return fail("Name and email are required.");
     }
-    getStore().updateHousehold({
+    (await readyStore()).updateHousehold({
       userId: body.userId,
       fullName: body.fullName.trim(),
       email: body.email.trim().toLowerCase(),

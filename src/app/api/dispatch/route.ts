@@ -1,5 +1,5 @@
 import { fail, json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 import type { JobKind } from "@/lib/engines/dispatch";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     if (!body.kind || !body.targetId) {
       return fail("kind and targetId are required.");
     }
-    const result = getStore().dispatch(body.kind, body.targetId, body.crewId);
+    const result = (await readyStore()).dispatch(body.kind, body.targetId, body.crewId);
     return json({ ok: true, ...result });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Dispatch failed", 500);
@@ -28,6 +28,6 @@ export async function GET(request: Request) {
   if (!targetId) return fail("targetId is required.");
   return json({
     ok: true,
-    recommendations: getStore().recommend(kind, targetId),
+    recommendations: (await readyStore()).recommend(kind, targetId),
   });
 }

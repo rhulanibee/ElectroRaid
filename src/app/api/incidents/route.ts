@@ -1,8 +1,8 @@
 import { json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  return json({ ok: true, incidents: getStore().snapshot().incidents });
+export async function GET() {
+  return json({ ok: true, incidents: (await readyStore()).snapshot().incidents });
 }

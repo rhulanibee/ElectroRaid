@@ -1,10 +1,10 @@
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const store = getStore();
+  const store = await readyStore();
   const encoder = new TextEncoder();
   let unsubscribe: () => void = () => {};
   let heartbeat: ReturnType<typeof setInterval> | undefined;

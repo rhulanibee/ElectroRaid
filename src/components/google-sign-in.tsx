@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { cn } from "@/lib/utils";
 
 function GoogleGlyph({ className }: { className?: string }) {
@@ -28,18 +29,29 @@ function GoogleGlyph({ className }: { className?: string }) {
 export function GoogleSignInButton({
   onClick,
   label = "Sign in with Google",
+  disabled = false,
+  loading = false,
 }: {
   onClick: () => void;
   label?: string;
+  disabled?: boolean;
+  loading?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex h-11 w-full items-center justify-center gap-3 rounded-xl border border-[#E5E7EB] bg-white text-sm font-semibold text-[#121417] shadow-sm transition hover:bg-[#F7F8F7]"
+      disabled={disabled || loading}
+      className="flex h-11 w-full items-center justify-center gap-3 rounded-xl border border-[#E5E7EB] bg-white text-sm font-semibold text-[#121417] shadow-sm transition hover:bg-[#F7F8F7] disabled:opacity-60"
     >
-      <GoogleGlyph />
-      {label}
+      {loading ? (
+        <ButtonSpinner label="Signing in…" />
+      ) : (
+        <>
+          <GoogleGlyph />
+          {label}
+        </>
+      )}
     </button>
   );
 }

@@ -628,11 +628,12 @@ function AssignCrewList({
               size="sm"
               variant={mine ? "secondary" : "outline"}
               className="h-auto w-full justify-between gap-2 py-1.5 text-left whitespace-normal"
+              loading={busyCrew === rec.crewId}
               disabled={busyCrew !== null || mine}
               onClick={() => onAssign(rec.crewId)}
             >
               <span>
-                {mine ? "Assigned · " : "Assign "}
+                {mine ? "Assigned · " : busyCrew === rec.crewId ? "Assigning · " : "Assign "}
                 {rec.callsign}
                 <span className="text-muted-foreground mt-0.5 block text-[10px] font-normal">
                   {rec.technicianName} · {rec.etaMinutes} min ·{" "}
@@ -648,10 +649,11 @@ function AssignCrewList({
         <Button
           size="sm"
           className="w-full"
+          loading={busyCrew === "nearest"}
           disabled={busyCrew !== null}
           onClick={onNearest}
         >
-          {nearestLabel}
+          {busyCrew === "nearest" ? "Assigning nearest…" : nearestLabel}
         </Button>
       ) : null}
     </div>

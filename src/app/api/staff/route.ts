@@ -1,5 +1,5 @@
 import { fail, json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 import type { StaffProvision, StaffRole } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -46,8 +46,9 @@ export async function POST(request: Request) {
       ? body.removeIds.filter((id): id is string => typeof id === "string")
       : [];
     if (!valid.length && !removeIds.length) return fail("No valid staff records.");
-    const created = valid.length ? getStore().ensureStaff(valid) : [];
-    const removed = removeIds.length ? getStore().removeStaff(removeIds) : [];
+    const store = await readyStore();
+    const created = valid.length ? store.ensureStaff(valid) : [];
+    const removed = removeIds.length ? store.removeStaff(removeIds) : [];
     return json({
       ok: true,
       created: created.length,

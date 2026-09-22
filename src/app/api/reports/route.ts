@@ -1,5 +1,5 @@
 import { fail, json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 import type { IngestReportInput } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -16,14 +16,14 @@ export async function POST(request: Request) {
     ) {
       return fail("Report requires location, address, classification, and channel.");
     }
-    const result = getStore().ingest(body);
+    const result = (await readyStore()).ingest(body);
     return json({ ok: true, ...result });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Ingest failed", 500);
   }
 }
 
-export function GET() {
-  const store = getStore();
+export async function GET() {
+  const store = await readyStore();
   return json({ ok: true, reports: store.snapshot().reports });
 }

@@ -1,5 +1,5 @@
 import { fail, json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function POST(
       lat: number;
       status?: "available" | "en_route" | "on_site" | "off_duty";
     };
-    getStore().updateCrewGps(id, body.lon, body.lat, body.status);
+    (await readyStore()).updateCrewGps(id, body.lon, body.lat, body.status);
     return json({ ok: true });
   } catch (error) {
     return fail(error instanceof Error ? error.message : "GPS update failed", 500);

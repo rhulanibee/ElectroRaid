@@ -1,10 +1,10 @@
 import { json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export function POST() {
-  const result = getStore().scanAnomalies();
+export async function POST() {
+  const result = (await readyStore()).scanAnomalies();
   return json({
     ok: true,
     created: result.created,

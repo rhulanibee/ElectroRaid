@@ -6,6 +6,7 @@ import {
   technicianNameForCrew,
 } from "@/components/track-live-map";
 import { SeverityBadge, StatusBadge } from "@/components/status-badge";
+import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { postJson, usePlatform } from "@/lib/use-platform";
 import { useSession } from "@/lib/use-session";
 import { classificationLabel, relativeMinutes } from "@/lib/format";
@@ -27,6 +28,7 @@ export function ResidentTrack() {
   }, [snapshot, account]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"confirm" | "dispute" | null>(null);
 
   const selected: MasterIncident | undefined =
     tickets.find((t) => t.id === selectedId) ?? tickets[0];
@@ -36,23 +38,33 @@ export function ResidentTrack() {
     : null;
 
   async function confirm(id: string) {
-    await postJson("/api/field/action", {
-      action: "confirm",
-      kind: "outage",
-      targetId: id,
-      actorId: persona?.id,
-    });
-    setMessage("Thank you. You confirmed power is back. Ticket closed.");
+    setBusy("confirm");
+    try {
+      await postJson("/api/field/action", {
+        action: "confirm",
+        kind: "outage",
+        targetId: id,
+        actorId: persona?.id,
+      });
+      setMessage("Thank you. You confirmed power is back. Ticket closed.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function dispute(id: string) {
-    await postJson("/api/field/action", {
-      action: "dispute",
-      kind: "outage",
-      targetId: id,
-      actorId: persona?.id,
-    });
-    setMessage("Still no power logged. Dispatch will send a crew again.");
+    setBusy("dispute");
+    try {
+      await postJson("/api/field/action", {
+        action: "dispute",
+        kind: "outage",
+        targetId: id,
+        actorId: persona?.id,
+      });
+      setMessage("Still no power logged. Dispatch will send a crew again.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -167,17 +179,23 @@ export function ResidentTrack() {
                 <div className="mt-3 grid grid-cols-1 gap-2">
                   <button
                     type="button"
+                    disabled={busy !== null}
                     onClick={() => confirm(selected.id)}
-                    className="inline-flex h-11 items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c]"
+                    className="inline-flex h-11 items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
                   >
-                    Confirm
+                    {busy === "confirm" ? <ButtonSpinner label="Confirming…" /> : "Confirm"}
                   </button>
                   <button
                     type="button"
+                    disabled={busy !== null}
                     onClick={() => dispute(selected.id)}
-                    className="inline-flex h-11 items-center justify-center rounded-xl bg-[#DC2626] text-sm font-semibold text-white hover:bg-[#B91C1C]"
+                    className="inline-flex h-11 items-center justify-center rounded-xl bg-[#DC2626] text-sm font-semibold text-white hover:bg-[#B91C1C] disabled:opacity-60"
                   >
-                    Dispute / Not Restored
+                    {busy === "dispute" ? (
+                      <ButtonSpinner label="Sending…" />
+                    ) : (
+                      "Dispute / Not Restored"
+                    )}
                   </button>
                 </div>
               </div>

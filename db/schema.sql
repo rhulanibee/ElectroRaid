@@ -23,6 +23,7 @@ CREATE TYPE user_role AS ENUM (
   'technician',
   'revenue_inspector',
   'executive',
+  'admin',
   'system'
 );
 

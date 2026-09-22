@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { postJson } from "@/lib/use-platform";
 import { useSession } from "@/lib/use-session";
 import { go } from "@/lib/hard-nav";
@@ -15,6 +16,7 @@ export function ResidentSettings() {
   const [address, setAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!persona) return;
@@ -32,33 +34,38 @@ export function ResidentSettings() {
     e.preventDefault();
     setError(null);
     setNotice(null);
-    const result = updateProfile({
-      firstName,
-      lastName,
-      email,
-      phone,
-      suburb,
-      address,
-    });
-    if (!result.persona) {
-      setError(result.error ?? "Could not save your details.");
-      return;
-    }
+    setBusy(true);
     try {
-      await postJson("/api/profile", {
-        userId: result.persona.id,
-        fullName: result.persona.name,
-        email: result.persona.email,
-        phone: result.persona.phone ?? null,
-        suburb: result.persona.suburb,
-        address: result.persona.address,
-        accountNumber: result.persona.accountNumber,
+      const result = updateProfile({
+        firstName,
+        lastName,
+        email,
+        phone,
+        suburb,
+        address,
       });
-    } catch {
-      setNotice("Saved on this device. The control room will pick it up when you are back online.");
-      return;
+      if (!result.persona) {
+        setError(result.error ?? "Could not save your details.");
+        return;
+      }
+      try {
+        await postJson("/api/profile", {
+          userId: result.persona.id,
+          fullName: result.persona.name,
+          email: result.persona.email,
+          phone: result.persona.phone ?? null,
+          suburb: result.persona.suburb,
+          address: result.persona.address,
+          accountNumber: result.persona.accountNumber,
+        });
+      } catch {
+        setNotice("Saved on this device. The control room will pick it up when you are back online.");
+        return;
+      }
+      setNotice("Your details are saved. The account number stays the same.");
+    } finally {
+      setBusy(false);
     }
-    setNotice("Your details are saved. The account number stays the same.");
   }
 
   const fieldClass =
@@ -142,9 +149,10 @@ export function ResidentSettings() {
         {notice ? <p className="text-sm font-medium text-[#167a34]">{notice}</p> : null}
         <button
           type="submit"
-          className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c]"
+          disabled={busy}
+          className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
         >
-          Save details
+          {busy ? <ButtonSpinner label="Saving…" /> : "Save details"}
         </button>
       </form>
 

@@ -1,5 +1,5 @@
 import { fail, json } from "@/lib/http";
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 import type { JobKind } from "@/lib/engines/dispatch";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       rating?: number;
     };
 
-    const store = getStore();
+    const store = await readyStore();
     switch (body.action) {
       case "onsite":
         store.markOnSite(body.kind, body.targetId);

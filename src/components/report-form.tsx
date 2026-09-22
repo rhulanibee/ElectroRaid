@@ -149,7 +149,7 @@ export function ReportForm() {
             }
           />
         </Field>
-        <Button className="w-full" onClick={submit} disabled={busy}>
+        <Button className="w-full" onClick={submit} loading={busy}>
           {busy ? "Submitting…" : mode === "tip" ? "Send anonymous tip" : "Submit outage report"}
         </Button>
         {message ? <p className="text-primary text-sm">{message}</p> : null}

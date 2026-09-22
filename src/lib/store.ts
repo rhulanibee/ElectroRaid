@@ -75,6 +75,7 @@ interface LiveFloorFile {
   version: 1;
   users: User[];
   crews: FieldCrew[];
+  feeders?: PlatformSnapshot["feeders"];
   meters: PlatformSnapshot["meters"];
   vending: PlatformSnapshot["vending"];
   incidents: MasterIncident[];
@@ -85,6 +86,7 @@ interface LiveFloorFile {
   provisioned: StaffProvision[];
   removedIds: string[];
   floorRevision?: number;
+  weights?: PlatformSnapshot["weights"];
 }
 
 class ElectroRaidStore {
@@ -111,6 +113,8 @@ class ElectroRaidStore {
   private diskMtime = 0;
   /** Bumps when a ticket changes. Van GPS does not bump it. */
   private floorRevision = 0;
+  /** True after the Postgres floor has been loaded or seeded. */
+  private sqlOn = false;
 
   constructor() {
     this.hydrate(true);
@@ -118,6 +122,68 @@ class ElectroRaidStore {
 
   reset() {
     this.hydrate(false);
+  }
+
+  /** Load the Postgres floor, or seed it from the current memory on first run. */
+  async attachSql() {
+    try {
+      const { enableSqlSaves, loadFloor, seedFloor, supabaseConfigured } = await import("./sql-floor");
+      if (!supabaseConfigured()) return;
+      const live = await loadFloor();
+      if (live && live.users.length > 0) this.replaceFloor(live);
+      else {
+        await seedFloor({
+          ...this.toLiveFile(),
+          feeders: this.feeders,
+          weights: this.weights,
+          removedIds: this.removedIds,
+          floorRevision: this.floorRevision,
+        });
+      }
+      enableSqlSaves();
+      this.sqlOn = true;
+    } catch (error) {
+      console.error("Supabase floor unavailable; keeping the file floor.", error);
+    }
+  }
+
+  private replaceFloor(live: LiveFloorFile) {
+    this.stopAllChases();
+    this.users = live.users ?? [];
+    this.crews = live.crews ?? [];
+    if (live.feeders?.length) this.feeders = live.feeders;
+    this.meters = live.meters ?? [];
+    this.vending = live.vending ?? [];
+    this.incidents = live.incidents ?? [];
+    this.reports = live.reports ?? [];
+    this.investigations = live.investigations ?? [];
+    this.audit = live.audit ?? [];
+    this.events = live.events ?? [];
+    this.provisioned = live.provisioned ?? [];
+    this.removedIds = live.removedIds ?? [];
+    this.floorRevision = live.floorRevision ?? 0;
+    if (live.weights) this.weights = { ...live.weights };
+    this.bootChases();
+  }
+
+  private toLiveFile(): LiveFloorFile {
+    return {
+      version: 1,
+      users: this.users,
+      crews: this.crews,
+      feeders: this.feeders,
+      meters: this.meters,
+      vending: this.vending,
+      incidents: this.incidents,
+      reports: this.reports,
+      investigations: this.investigations,
+      audit: this.audit,
+      events: this.events,
+      provisioned: this.provisioned,
+      removedIds: this.removedIds,
+      floorRevision: this.floorRevision,
+      weights: this.weights,
+    };
   }
 
   private hydrate(restore: boolean) {
@@ -1029,21 +1095,17 @@ class ElectroRaidStore {
 
   private writeLive() {
     this.absorbNewerDisk();
-    const body: LiveFloorFile = {
-      version: 1,
-      users: this.users,
-      crews: this.crews,
-      meters: this.meters,
-      vending: this.vending,
-      incidents: this.incidents,
-      reports: this.reports,
-      investigations: this.investigations,
-      audit: this.audit,
-      events: this.events,
-      provisioned: this.provisioned,
-      removedIds: this.removedIds,
-      floorRevision: this.floorRevision,
-    };
+    const body = this.toLiveFile();
+    if (this.sqlOn) {
+      const floor = {
+        ...body,
+        feeders: this.feeders,
+        weights: this.weights,
+        removedIds: this.removedIds,
+        floorRevision: this.floorRevision,
+      };
+      void import("./sql-floor").then((sql) => sql.queueSqlSave(floor));
+    }
     try {
       fs.mkdirSync(path.dirname(LIVE_PATH), { recursive: true });
       fs.writeFileSync(LIVE_PATH, JSON.stringify(body));
@@ -1505,13 +1567,25 @@ class ElectroRaidStore {
   }
 }
 
-const globalForStore = globalThis as unknown as { __electroraid_v6?: ElectroRaidStore };
+const globalForStore = globalThis as unknown as {
+  __electroraid_v7?: ElectroRaidStore;
+  __electroraid_sql_ready?: Promise<ElectroRaidStore>;
+};
 
 export function getStore(): ElectroRaidStore {
-  if (!globalForStore.__electroraid_v6) {
-    globalForStore.__electroraid_v6 = new ElectroRaidStore();
+  if (!globalForStore.__electroraid_v7) {
+    globalForStore.__electroraid_v7 = new ElectroRaidStore();
   }
-  return globalForStore.__electroraid_v6;
+  return globalForStore.__electroraid_v7;
+}
+
+/** Store after the Postgres floor has been loaded. API routes await this. */
+export function readyStore(): Promise<ElectroRaidStore> {
+  if (!globalForStore.__electroraid_sql_ready) {
+    const store = getStore();
+    globalForStore.__electroraid_sql_ready = store.attachSql().then(() => store);
+  }
+  return globalForStore.__electroraid_sql_ready;
 }
 
 export { hoursAgo };

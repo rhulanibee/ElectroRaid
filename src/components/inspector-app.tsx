@@ -28,6 +28,7 @@ export function InspectorApp() {
   const [qaId, setQaId] = useState<string | null>(null);
   const [rating, setRating] = useState(4);
   const [qaNotes, setQaNotes] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const sync = () => setOnline(navigator.onLine);
@@ -82,15 +83,21 @@ export function InspectorApp() {
     qaJobs.find((i) => i.id === qaId) ?? qaJobs.find((i) => !i.qaRating) ?? qaJobs[0];
 
   async function act(payload: Record<string, unknown>) {
-    const body = { ...payload, actorId: persona?.id };
-    if (!online) {
-      await enqueue(body);
-      setQueued(await pendingCount());
-      setStatus("Queued on-device until radio returns.");
-      return;
+    const key = String(payload.action ?? "act");
+    setBusy(key);
+    try {
+      const body = { ...payload, actorId: persona?.id };
+      if (!online) {
+        await enqueue(body);
+        setQueued(await pendingCount());
+        setStatus("Queued on-device until radio returns.");
+        return;
+      }
+      await postJson("/api/field/action", body);
+      setStatus("Hashed into the audit chain with GPS timestamp.");
+    } finally {
+      setBusy(null);
     }
-    await postJson("/api/field/action", body);
-    setStatus("Hashed into the audit chain with GPS timestamp.");
   }
 
   async function submitQa() {
@@ -175,15 +182,21 @@ export function InspectorApp() {
               claimed={active.assignedCrewId === persona?.crewId}
               sealBroken={sealBroken}
               bypass={bypass}
+              busy={busy}
               onSeal={setSealBroken}
               onBypass={setBypass}
-              onClaim={() =>
-                postJson("/api/dispatch", {
-                  kind: "investigation",
-                  targetId: active.id,
-                  crewId: persona?.crewId,
-                })
-              }
+              onClaim={async () => {
+                setBusy("claim");
+                try {
+                  await postJson("/api/dispatch", {
+                    kind: "investigation",
+                    targetId: active.id,
+                    crewId: persona?.crewId,
+                  });
+                } finally {
+                  setBusy(null);
+                }
+              }}
               onOnSite={() =>
                 act({ action: "onsite", kind: "investigation", targetId: active.id })
               }
@@ -228,6 +241,7 @@ export function InspectorApp() {
           onRating={setRating}
           onNotes={setQaNotes}
           onSubmit={submitQa}
+          busy={busy}
         />
       )}
       {status ? <p className="text-gold mt-4 text-xs">{status}</p> : null}
@@ -242,6 +256,7 @@ function QaPanel({
   snapshotUsers,
   rating,
   notes,
+  busy,
   onSelect,
   onRating,
   onNotes,
@@ -253,6 +268,7 @@ function QaPanel({
   snapshotUsers: { id: string; fullName: string }[];
   rating: number;
   notes: string;
+  busy: string | null;
   onSelect: (id: string) => void;
   onRating: (n: number) => void;
   onNotes: (v: string) => void;
@@ -331,10 +347,12 @@ function QaPanel({
               placeholder="Joint quality, site left safe, serial captured…"
             />
           </label>
-          <Button className="mt-3 w-full" onClick={onSubmit}>
-            {selected.qaRating
-              ? "Update QA on this repair"
-              : "Submit quality assurance"}
+          <Button className="mt-3 w-full" loading={busy === "qa"} disabled={busy !== null} onClick={onSubmit}>
+            {busy === "qa"
+              ? "Submitting QA…"
+              : selected.qaRating
+                ? "Update QA on this repair"
+                : "Submit quality assurance"}
           </Button>
         </div>
       ) : null}
@@ -347,6 +365,7 @@ function AuditCard({
   claimed,
   sealBroken,
   bypass,
+  busy,
   onSeal,
   onBypass,
   onClaim,
@@ -358,6 +377,7 @@ function AuditCard({
   claimed: boolean;
   sealBroken: boolean;
   bypass: boolean;
+  busy: string | null;
   onSeal: (v: boolean) => void;
   onBypass: (v: boolean) => void;
   onClaim: () => void;
@@ -410,16 +430,31 @@ function AuditCard({
 
       <div className="mt-4 flex flex-col gap-2">
         {!claimed ? (
-          <Button onClick={onClaim}>Accept audit · En Route</Button>
+          <Button onClick={onClaim} loading={busy === "claim"} disabled={busy !== null}>
+            {busy === "claim" ? "Accepting…" : "Accept audit · En Route"}
+          </Button>
         ) : (
-          <Button onClick={onOnSite}>Arrive On Site</Button>
+          <Button onClick={onOnSite} loading={busy === "onsite"} disabled={busy !== null}>
+            {busy === "onsite" ? "Logging arrival…" : "Arrive On Site"}
+          </Button>
         )}
-        <Button variant="outline" onClick={onEvidence}>
-          Log GPS photo evidence
+        <Button
+          variant="outline"
+          onClick={onEvidence}
+          loading={busy === "evidence"}
+          disabled={busy !== null}
+        >
+          {busy === "evidence" ? "Saving evidence…" : "Log GPS photo evidence"}
         </Button>
-        <Button variant="secondary" onClick={onFine} disabled={!bypass && !sealBroken}>
-          Issue tamper fine
-          {total ? ` · ${formatZar(total)}` : " + back-bill"}
+        <Button
+          variant="secondary"
+          onClick={onFine}
+          loading={busy === "fine"}
+          disabled={(!bypass && !sealBroken) || busy !== null}
+        >
+          {busy === "fine"
+            ? "Issuing fine…"
+            : `Issue tamper fine${total ? ` · ${formatZar(total)}` : " + back-bill"}`}
         </Button>
       </div>
     </div>

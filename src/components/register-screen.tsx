@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AuthField, AuthFrame, authControlClass, authPrimaryClass } from "@/components/auth-frame";
+import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { GoogleSignInButton } from "@/components/google-sign-in";
 import { afterLoginPath, useSession } from "@/lib/use-session";
 import { go, goReplace } from "@/lib/hard-nav";
@@ -15,27 +16,41 @@ export function RegisterScreen() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"form" | "google" | null>(null);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const result = register({
-      firstName,
-      lastName,
-      email,
-      accountNumber,
-      phone,
-      password,
-    });
-    if (!result.persona) {
-      setError(result.error ?? "Could not create the account.");
-      return;
+    setBusy("form");
+    setError(null);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const result = register({
+        firstName,
+        lastName,
+        email,
+        accountNumber,
+        phone,
+        password,
+      });
+      if (!result.persona) {
+        setError(result.error ?? "Could not create the account.");
+        return;
+      }
+      goReplace("/verify");
+    } finally {
+      setBusy(null);
     }
-    goReplace("/verify");
   }
 
-  function google() {
-    const persona = loginWithGoogle();
-    if (persona) goReplace(afterLoginPath(persona, null));
+  async function google() {
+    setBusy("google");
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const persona = loginWithGoogle();
+      if (persona) goReplace(afterLoginPath(persona, null));
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -101,8 +116,8 @@ export function RegisterScreen() {
           />
         </AuthField>
         {error ? <p className="text-sm text-[#DC2626]">{error}</p> : null}
-        <button type="submit" className={authPrimaryClass}>
-          Register
+        <button type="submit" className={authPrimaryClass} disabled={busy !== null}>
+          {busy === "form" ? <ButtonSpinner label="Creating account…" /> : "Register"}
         </button>
       </form>
 
@@ -111,7 +126,12 @@ export function RegisterScreen() {
         <div className="absolute inset-x-0 top-1/2 border-t border-[#E5E7EB]" />
       </div>
 
-      <GoogleSignInButton onClick={google} label="Sign up with Google" />
+      <GoogleSignInButton
+        onClick={google}
+        label="Sign up with Google"
+        disabled={busy !== null}
+        loading={busy === "google"}
+      />
 
       <p className="mt-5 text-center text-sm text-[#6B7280]">
         Already registered?{" "}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ButtonSpinner } from "@/components/ui/button-spinner";
 import { roleLabel } from "@/lib/format";
 import {
   addStaffAccount,
@@ -35,6 +36,7 @@ export function AdminStaff() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const [busy, setBusy] = useState<"save" | string | null>(null);
 
   const staff = useMemo(() => {
     void version;
@@ -72,29 +74,34 @@ export function AdminStaff() {
     e.preventDefault();
     setError(null);
     setNotice(null);
-    const result = editingId
-      ? updateStaffAccount(editingId, draft)
-      : addStaffAccount(draft);
-    if (!result.persona) {
-      setError(result.error ?? "Could not save that person.");
-      return;
-    }
+    setBusy("save");
     try {
-      await syncLocalStaff();
-    } catch {
-      setError(
-        "Saved on this device, but the live ops floor did not accept the update. Try again.",
+      const result = editingId
+        ? updateStaffAccount(editingId, draft)
+        : addStaffAccount(draft);
+      if (!result.persona) {
+        setError(result.error ?? "Could not save that person.");
+        return;
+      }
+      try {
+        await syncLocalStaff();
+      } catch {
+        setError(
+          "Saved on this device, but the live ops floor did not accept the update. Try again.",
+        );
+        setVersion((n) => n + 1);
+        return;
+      }
+      setNotice(
+        editingId
+          ? `${result.persona.name} is updated.`
+          : `${result.persona.name} can sign in with username ${result.persona.email}.`,
       );
+      resetForm();
       setVersion((n) => n + 1);
-      return;
+    } finally {
+      setBusy(null);
     }
-    setNotice(
-      editingId
-        ? `${result.persona.name} is updated.`
-        : `${result.persona.name} can sign in with username ${result.persona.email}.`,
-    );
-    resetForm();
-    setVersion((n) => n + 1);
   }
 
   async function remove(id: string, name: string) {
@@ -103,21 +110,26 @@ export function AdminStaff() {
     }
     setError(null);
     setNotice(null);
-    const result = removeStaffAccount(id);
-    if (!result.ok) {
-      setError(result.error ?? "Could not remove that person.");
-      return;
-    }
+    setBusy(`remove:${id}`);
     try {
-      await syncLocalStaff();
-    } catch {
-      setError("Removed on this device, but the live floor did not update. Try again.");
+      const result = removeStaffAccount(id);
+      if (!result.ok) {
+        setError(result.error ?? "Could not remove that person.");
+        return;
+      }
+      try {
+        await syncLocalStaff();
+      } catch {
+        setError("Removed on this device, but the live floor did not update. Try again.");
+        setVersion((n) => n + 1);
+        return;
+      }
+      if (editingId === id) resetForm();
+      setNotice(`${name} was removed.`);
       setVersion((n) => n + 1);
-      return;
+    } finally {
+      setBusy(null);
     }
-    if (editingId === id) resetForm();
-    setNotice(`${name} was removed.`);
-    setVersion((n) => n + 1);
   }
 
   const fieldClass =
@@ -214,9 +226,16 @@ export function AdminStaff() {
         <div className="flex gap-2 sm:col-span-2">
           <button
             type="submit"
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-[#24A148] px-4 text-sm font-semibold text-white hover:bg-[#1e8a3c]"
+            disabled={busy !== null}
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-[#24A148] px-4 text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
           >
-            {editingId ? "Save changes" : `Add ${roleName(draft.role).toLowerCase()}`}
+            {busy === "save" ? (
+              <ButtonSpinner label={editingId ? "Saving…" : "Adding…"} />
+            ) : editingId ? (
+              "Save changes"
+            ) : (
+              `Add ${roleName(draft.role).toLowerCase()}`
+            )}
           </button>
           {editingId ? (
             <button
@@ -260,10 +279,15 @@ export function AdminStaff() {
                 </button>
                 <button
                   type="button"
+                  disabled={busy !== null}
                   onClick={() => remove(row.persona.id, row.persona.name)}
-                  className="inline-flex h-9 items-center rounded-xl border border-[#FECACA] px-3 text-sm font-semibold text-[#DC2626] hover:bg-[#FEF2F2]"
+                  className="inline-flex h-9 items-center rounded-xl border border-[#FECACA] px-3 text-sm font-semibold text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-60"
                 >
-                  Remove
+                  {busy === `remove:${row.persona.id}` ? (
+                    <ButtonSpinner label="Removing…" />
+                  ) : (
+                    "Remove"
+                  )}
                 </button>
               </div>
             </div>

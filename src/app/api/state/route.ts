@@ -1,10 +1,10 @@
-import { getStore } from "@/lib/store";
+import { readyStore } from "@/lib/store";
 import { json } from "@/lib/http";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
-  const store = getStore();
+export async function GET() {
+  const store = await readyStore();
   return json({
     ok: true,
     snapshot: store.snapshot(),

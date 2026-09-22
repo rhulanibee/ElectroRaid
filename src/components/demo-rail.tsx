@@ -65,11 +65,12 @@ export function DemoRail() {
             size="xs"
             variant="outline"
             onClick={() => runStep("reset", 0)}
+            loading={running && cursor === 0}
             disabled={running}
           >
             Reset
           </Button>
-          <Button size="xs" onClick={playAll} disabled={running}>
+          <Button size="xs" onClick={playAll} loading={running && cursor > 0} disabled={running}>
             {running ? "Playing…" : "Play all 4 acts"}
           </Button>
         </div>
