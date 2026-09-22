@@ -107,6 +107,13 @@ export function auditStory(row: AuditLog): AuditStory {
         ticket: reference,
         kind: "outage",
       };
+    case "NEIGHBOUR_SAME_SITUATION":
+      return {
+        title: "Neighbour confirmed same outage",
+        detail: `${reference ?? "The ticket"} gained another household in the area.`,
+        ticket: reference,
+        kind: "outage",
+      };
     case "RESIDENT_CONFIRMED_RESTORE":
       return {
         title: "Resident confirmed power is back",

@@ -26,7 +26,7 @@ import {
 } from "./engines/dispatch";
 import { refreshIncidentPriority } from "./engines/priority";
 import { computeRoi } from "./engines/roi";
-import { ingestReport } from "./engines/spatial";
+import { ingestReport, joinExistingIncident } from "./engines/spatial";
 import { distanceMetres, etaMinutes, lerpPoint, pointForSuburb } from "./geo";
 import { hoursAgo, newId, nowIso } from "./id";
 import { seedPlatform } from "./seed";
@@ -256,6 +256,10 @@ class ElectroRaidStore {
       return this.ingestTip(input);
     }
 
+    if (input.joinIncidentId) {
+      return this.joinSameSituation(input.joinIncidentId, input);
+    }
+
     const result = ingestReport(
       this.incidents,
       this.reports,
@@ -301,6 +305,80 @@ class ElectroRaidStore {
       severity: result.merged ? "warn" : "critical",
       entityType: "master_incident",
       entityId: result.incident.id,
+    });
+
+    // Neighbours in the same suburb are asked if they face the same fault.
+    this.emit({
+      type: "area.outage_ask",
+      title: `Outage reported in ${result.incident.suburb}`,
+      detail: `A household reported ${result.incident.classification.replaceAll("_", " ")}. Confirm if you are facing the same situation.`,
+      severity: "warn",
+      entityType: "master_incident",
+      entityId: result.incident.id,
+    });
+
+    return { kind: "outage" as const, ...result };
+  }
+
+  /** Neighbour taps “Yes, me too” on a same-area alert. */
+  joinSameSituation(incidentId: string, input: IngestReportInput) {
+    const incident = this.incidents.find((row) => row.id === incidentId);
+    if (!incident) throw new Error("Unknown outage ticket.");
+
+    const suburb = (input.suburb ?? "").trim().toLowerCase();
+    if (suburb && suburb !== incident.suburb.trim().toLowerCase()) {
+      throw new Error("That outage is not in your suburb.");
+    }
+
+    if (input.accountNumber) {
+      const already = this.reports.some(
+        (report) =>
+          report.masterIncidentId === incidentId &&
+          report.accountNumber === input.accountNumber,
+      );
+      if (already) {
+        throw new Error("Your household is already on this ticket.");
+      }
+    }
+
+    const result = joinExistingIncident(
+      incident,
+      this.reports,
+      {
+        ...input,
+        classification: input.classification || incident.classification,
+        notes: input.notes ?? "Neighbour confirmed same situation.",
+        channel: input.channel || "app",
+      },
+      this.weights,
+    );
+    this.reports.push(result.report);
+    const idx = this.incidents.findIndex((row) => row.id === incidentId);
+    if (idx >= 0) this.incidents[idx] = result.incident;
+
+    this.recordAudit({
+      actorId: this.systemUser().id,
+      actorRole: "resident",
+      actionType: "NEIGHBOUR_SAME_SITUATION",
+      entityType: "master_incident",
+      entityId: incidentId,
+      location: input.location,
+      payload: {
+        reportId: result.report.id,
+        reference: result.incident.reference,
+        accountNumber: input.accountNumber ?? null,
+        affectedHouseholds: result.incident.affectedHouseholds,
+        matchDistanceM: result.matchDistanceM,
+      },
+    });
+
+    this.emit({
+      type: "incident.merged",
+      title: `Neighbour joined ${result.incident.reference}`,
+      detail: `${result.incident.affectedHouseholds} households now on this ticket in ${result.incident.suburb}.`,
+      severity: "warn",
+      entityType: "master_incident",
+      entityId: incidentId,
     });
 
     return { kind: "outage" as const, ...result };
@@ -740,6 +818,14 @@ class ElectroRaidStore {
     if (idx < 0) throw new Error("Unknown incident");
     const now = nowIso();
     const incident = this.incidents[idx];
+    if (incident.status !== "resolved") {
+      throw new Error(
+        "Confirm is only allowed after the technician signs off restore.",
+      );
+    }
+    if (incident.residentConfirmedAt) {
+      throw new Error("This household already confirmed restore.");
+    }
     this.incidents[idx] = {
       ...incident,
       status: "closed",
@@ -770,10 +856,16 @@ class ElectroRaidStore {
     if (idx < 0) throw new Error("Unknown incident");
     const now = nowIso();
     const incident = this.incidents[idx];
+    if (incident.status !== "resolved") {
+      throw new Error(
+        "Dispute is only allowed after the technician claims restore.",
+      );
+    }
     this.incidents[idx] = {
       ...incident,
       status: "open",
       resolvedAt: null,
+      residentConfirmedAt: null,
       lastActivityAt: now,
     };
     this.recordAudit({

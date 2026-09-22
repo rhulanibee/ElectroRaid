@@ -42,7 +42,15 @@ export function ResidentDashboard() {
     );
   }, [ownIncidents, query]);
 
-  const alert = notices.find((notice) => !notice.read) ?? notices[0];
+  const alert =
+    notices.find(
+      (notice) =>
+        !notice.read &&
+        (notice.actionable === "confirm_restore" ||
+          notice.actionable === "same_situation"),
+    ) ??
+    notices.find((notice) => !notice.read) ??
+    notices[0];
   const initials = (persona?.name ?? "R")
     .split(" ")
     .map((p) => p[0])
@@ -88,18 +96,54 @@ export function ResidentDashboard() {
 
       <div className="px-4 pt-4 md:px-6">
         {alert ? (
-          <div className="rounded-2xl border border-[#C6EBD3] bg-[#E8F6EC] px-4 py-3">
-            <div className="text-[11px] font-bold tracking-[0.16em] text-[#167a34] uppercase">
+          <div
+            className={`rounded-2xl border px-4 py-3 ${
+              alert.actionable === "confirm_restore"
+                ? "border-[#FECACA] bg-[#FEF2F2]"
+                : alert.actionable === "same_situation"
+                  ? "border-[#FDE68A] bg-[#FFFBEB]"
+                  : "border-[#C6EBD3] bg-[#E8F6EC]"
+            }`}
+          >
+            <div
+              className={`text-[11px] font-bold tracking-[0.16em] uppercase ${
+                alert.actionable === "confirm_restore"
+                  ? "text-[#B91C1C]"
+                  : alert.actionable === "same_situation"
+                    ? "text-[#92400E]"
+                    : "text-[#167a34]"
+              }`}
+            >
               {noticeLabel(alert.type)}
             </div>
             <div className="mt-1 text-sm font-semibold text-[#121417]">
               {alert.title}
             </div>
             <div className="text-sm text-[#3F5A48]">{alert.detail}</div>
+            {alert.actionable === "same_situation" ||
+            alert.actionable === "confirm_restore" ? (
+              <button
+                type="button"
+                onClick={() =>
+                  go(
+                    alert.actionable === "confirm_restore"
+                      ? "/resident/track"
+                      : "/resident/notifications",
+                  )
+                }
+                className="mt-2 text-sm font-semibold text-[#24A148] underline-offset-2 hover:underline"
+              >
+                {alert.actionable === "confirm_restore"
+                  ? "Open Track Reports →"
+                  : "Answer in Notifications →"}
+              </button>
+            ) : null}
           </div>
         ) : (
           <div className="rounded-2xl border border-[#E5E7EB] bg-white px-4 py-3 text-sm text-[#6B7280]">
-            No new alerts. We will tell you when a crew is assigned near {suburb}.
+            No new alerts. We will tell you when a neighbour reports near{" "}
+            {suburb || "your suburb"}, when a crew is assigned, or when you must
+            confirm restore.
           </div>
         )}
       </div>

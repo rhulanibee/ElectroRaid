@@ -168,6 +168,72 @@ export function ingestReport(
   return { report, incident, merged: false, matchDistanceM: null };
 }
 
+/**
+ * Neighbour confirms they have the same outage — join a known open ticket
+ * by id (suburb match), without relying on the 500 m window alone.
+ */
+export function joinExistingIncident(
+  incident: MasterIncident,
+  reports: OutageReport[],
+  input: IngestReportInput,
+  weights: PriorityWeights = DEFAULT_WEIGHTS,
+  now: Date = new Date(),
+): MergeResult {
+  if (incident.status === "resolved" || incident.status === "closed") {
+    throw new Error("That outage is already closed or waiting for restore confirm.");
+  }
+  const reportedAt = input.reportedAt ?? now.toISOString();
+  const clusteredReports = [
+    ...reports.filter((r) => r.masterIncidentId === incident.id),
+  ];
+  const report: OutageReport = {
+    id: newId("rpt"),
+    masterIncidentId: incident.id,
+    accountNumber: input.accountNumber ?? null,
+    reporterName: input.reporterName ?? null,
+    contactPhone: input.contactPhone ?? null,
+    location: input.location,
+    address: input.address,
+    classification: input.classification ?? incident.classification,
+    channel: input.channel,
+    notes: input.notes ?? "Neighbour confirmed same situation.",
+    reportedAt,
+  };
+  clusteredReports.push(report);
+
+  const nextHouseholds = incident.affectedHouseholds + 1;
+  const nextCentroid = centroid([
+    incident.location,
+    ...clusteredReports.map((r) => r.location),
+  ]);
+  const critical =
+    incident.criticalInfrastructure || Boolean(input.criticalInfrastructure);
+  const distanceM = Math.round(distanceMetres(incident.location, input.location));
+
+  const next: MasterIncident = {
+    ...incident,
+    location: nextCentroid,
+    affectedHouseholds: nextHouseholds,
+    criticalInfrastructure: critical,
+    status: incident.status === "open" ? "clustered" : incident.status,
+    lastActivityAt: nowIso(),
+    priorityScore: computePriorityScore(
+      nextHouseholds,
+      critical,
+      incident.firstReportedAt,
+      now,
+      weights,
+    ),
+  };
+
+  return {
+    report,
+    incident: next,
+    merged: true,
+    matchDistanceM: distanceM,
+  };
+}
+
 export function nextIncidentReference(incidents: MasterIncident[]): string {
   const year = new Date().getFullYear();
   const seq = incidents.length + 1;

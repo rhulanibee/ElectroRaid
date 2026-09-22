@@ -1,3 +1,4 @@
+import { classificationLabel } from "@/lib/format";
 import type { LiveEvent, PlatformSnapshot } from "@/lib/types";
 
 export const NOTICES_KEY_PREFIX = "electroraid.notices.";
@@ -10,6 +11,8 @@ const STATUS_EVENT_TYPES = new Set([
   "field.onsite",
   "incident.resolved",
   "incident.resident_confirmed",
+  "area.outage_ask",
+  "area.same_situation",
 ]);
 
 /** Extra live events that have no matching timestamp on the ticket. */
@@ -28,6 +31,8 @@ export interface ResidentNotice {
   severity: LiveEvent["severity"];
   entityId?: string;
   read: boolean;
+  /** Neighbour can confirm same outage from the notice. */
+  actionable?: "same_situation" | "confirm_restore";
 }
 
 export function noticesKey(userId: string) {
@@ -77,11 +82,14 @@ export function noticeLabel(type: string): string {
     case "field.onsite":
       return "On site";
     case "incident.resolved":
-      return "Supply restored";
+      return "Confirm restore required";
     case "incident.resident_confirmed":
       return "You confirmed";
     case "incident.resident_dispute":
       return "Still no power";
+    case "area.outage_ask":
+    case "area.same_situation":
+      return "Same situation?";
     default:
       return "Update";
   }
@@ -101,13 +109,19 @@ function byNewest(a: ResidentNotice, b: ResidentNotice) {
   return a.id.localeCompare(b.id);
 }
 
+function sameSuburb(a: string | undefined, b: string | undefined) {
+  if (!a || !b) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 /**
- * Notices for the signed-in household, built from their reports and the
- * live ticket record (assignment, on site, restore) plus arrival events.
+ * Notices for the signed-in household: own tickets, restore confirm, and
+ * same-suburb outages asking “are you facing the same?”.
  */
 export function deriveResidentNotices(
   snapshot: PlatformSnapshot,
   accountNumber: string | undefined,
+  suburb?: string,
 ): ResidentNotice[] {
   if (!accountNumber) return [];
   const reports = snapshot.reports.filter(
@@ -153,17 +167,18 @@ export function deriveResidentNotices(
         read: false,
       });
     }
-    if (incident.resolvedAt) {
+    if (incident.resolvedAt && !incident.residentConfirmedAt) {
       notices.push({
         id: `${incident.id}:resolved`,
         type: "incident.resolved",
-        title: `${incident.reference} — technician finished`,
+        title: `${incident.reference} — confirm your lights`,
         detail:
-          "Supply should be back. Confirm on Track Reports if your lights are on.",
+          "Technician signed off. You must Confirm or Dispute on Track Reports. The ticket cannot close without your answer.",
         at: incident.resolvedAt,
-        severity: "success",
+        severity: "critical",
         entityId: incident.id,
         read: false,
+        actionable: "confirm_restore",
       });
     }
     if (incident.residentConfirmedAt) {
@@ -176,6 +191,28 @@ export function deriveResidentNotices(
         severity: "success",
         entityId: incident.id,
         read: false,
+      });
+    }
+  }
+
+  // Same-area: open tickets in your suburb that you have not joined yet.
+  if (suburb) {
+    for (const incident of snapshot.incidents) {
+      if (incidentIds.has(incident.id)) continue;
+      if (incident.status === "closed" || incident.status === "resolved") {
+        continue;
+      }
+      if (!sameSuburb(incident.suburb, suburb)) continue;
+      notices.push({
+        id: `${incident.id}:area:${accountNumber}`,
+        type: "area.same_situation",
+        title: `Outage reported in ${incident.suburb}`,
+        detail: `Someone nearby reported ${classificationLabel(incident.classification)}. Are you facing the same situation? Tap Yes to join ticket ${incident.reference}.`,
+        at: incident.lastActivityAt || incident.firstReportedAt,
+        severity: "warn",
+        entityId: incident.id,
+        read: false,
+        actionable: "same_situation",
       });
     }
   }

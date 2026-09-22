@@ -28,7 +28,9 @@ export function ResidentTrack() {
   }, [snapshot, account]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"confirm" | "dispute" | null>(null);
+  const [ackLights, setAckLights] = useState(false);
 
   const selected: MasterIncident | undefined =
     tickets.find((t) => t.id === selectedId) ?? tickets[0];
@@ -38,15 +40,28 @@ export function ResidentTrack() {
     : null;
 
   async function confirm(id: string) {
+    if (!ackLights) {
+      setError("Tick the box to confirm your lights are back before closing.");
+      return;
+    }
     setBusy("confirm");
+    setError(null);
     try {
-      await postJson("/api/field/action", {
-        action: "confirm",
-        kind: "outage",
-        targetId: id,
-        actorId: persona?.id,
-      });
+      const result = await postJson<{ ok: boolean; error?: string }>(
+        "/api/field/action",
+        {
+          action: "confirm",
+          kind: "outage",
+          targetId: id,
+          actorId: persona?.id,
+        },
+      );
+      if (!result.ok) {
+        setError(result.error ?? "Confirm failed.");
+        return;
+      }
       setMessage("Thank you. You confirmed power is back. Ticket closed.");
+      setAckLights(false);
     } finally {
       setBusy(null);
     }
@@ -54,14 +69,23 @@ export function ResidentTrack() {
 
   async function dispute(id: string) {
     setBusy("dispute");
+    setError(null);
     try {
-      await postJson("/api/field/action", {
-        action: "dispute",
-        kind: "outage",
-        targetId: id,
-        actorId: persona?.id,
-      });
+      const result = await postJson<{ ok: boolean; error?: string }>(
+        "/api/field/action",
+        {
+          action: "dispute",
+          kind: "outage",
+          targetId: id,
+          actorId: persona?.id,
+        },
+      );
+      if (!result.ok) {
+        setError(result.error ?? "Dispute failed.");
+        return;
+      }
       setMessage("Still no power logged. Dispatch will send a crew again.");
+      setAckLights(false);
     } finally {
       setBusy(null);
     }
@@ -72,14 +96,15 @@ export function ResidentTrack() {
       <div>
         <h1 className="font-heading text-2xl font-bold">Active Reports</h1>
         <p className="mt-1 text-sm text-[#6B7280]">
-          Live technician tracking for reports on your account.
+          Live technician tracking for reports on your account. After sign-off
+          you must Confirm or Dispute — tickets do not close without you.
         </p>
       </div>
 
       {tickets.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-[#E5E7EB] bg-white px-4 py-12 text-center text-sm text-[#6B7280]">
-          No active reports to track. Report an outage and a dispatcher will
-          assign a crew.
+          No active reports to track. Report an outage, or answer a same-area
+          alert if a neighbour already reported nearby.
         </div>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-1">
@@ -87,7 +112,11 @@ export function ResidentTrack() {
             <button
               key={incident.id}
               type="button"
-              onClick={() => setSelectedId(incident.id)}
+              onClick={() => {
+                setSelectedId(incident.id);
+                setAckLights(false);
+                setError(null);
+              }}
               className={`min-w-[260px] rounded-2xl border bg-white p-4 text-left shadow-sm transition ${
                 selected?.id === incident.id
                   ? "border-[#24A148] ring-2 ring-[#24A148]/20"
@@ -172,18 +201,44 @@ export function ResidentTrack() {
             </div>
 
             {selected.status === "resolved" ? (
-              <div className="rounded-2xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
-                <div className="text-sm font-semibold">
-                  Technician says the job is done. Is your power back?
+              <div className="rounded-2xl border-2 border-[#DC2626]/40 bg-[#FEF2F2] p-4 shadow-sm">
+                <div className="text-[11px] font-bold tracking-[0.16em] text-[#B91C1C] uppercase">
+                  Required — household confirm
                 </div>
+                <div className="mt-2 text-sm font-semibold text-[#121417]">
+                  Technician says supply is restored. Is your power back?
+                </div>
+                <p className="mt-1 text-xs text-[#6B7280]">
+                  This ticket stays open until you Confirm (lights on) or Dispute
+                  (still no power). Dispatch cannot close it for you.
+                </p>
+                <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-xl border border-[#E5E7EB] bg-white px-3 py-2.5 text-sm text-[#121417]">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 size-4 accent-[#24A148]"
+                    checked={ackLights}
+                    onChange={(e) => {
+                      setAckLights(e.target.checked);
+                      setError(null);
+                    }}
+                  />
+                  <span>
+                    I confirm the lights are back on at{" "}
+                    <strong>{selected.address}</strong>.
+                  </span>
+                </label>
                 <div className="mt-3 grid grid-cols-1 gap-2">
                   <button
                     type="button"
-                    disabled={busy !== null}
+                    disabled={busy !== null || !ackLights}
                     onClick={() => confirm(selected.id)}
                     className="inline-flex h-11 items-center justify-center rounded-xl bg-[#24A148] text-sm font-semibold text-white hover:bg-[#1e8a3c] disabled:opacity-60"
                   >
-                    {busy === "confirm" ? <ButtonSpinner label="Confirming…" /> : "Confirm"}
+                    {busy === "confirm" ? (
+                      <ButtonSpinner label="Confirming…" />
+                    ) : (
+                      "Confirm — power restored"
+                    )}
                   </button>
                   <button
                     type="button"
@@ -194,13 +249,18 @@ export function ResidentTrack() {
                     {busy === "dispute" ? (
                       <ButtonSpinner label="Sending…" />
                     ) : (
-                      "Dispute / Not Restored"
+                      "Dispute — still no power"
                     )}
                   </button>
                 </div>
               </div>
             ) : null}
 
+            {error ? (
+              <div className="rounded-xl bg-[#FEF2F2] px-3 py-2 text-sm text-[#B91C1C]">
+                {error}
+              </div>
+            ) : null}
             {message ? (
               <div className="rounded-xl bg-[#E8F6EC] px-3 py-2 text-sm text-[#167a34]">
                 {message}

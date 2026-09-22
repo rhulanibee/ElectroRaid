@@ -251,6 +251,8 @@ export interface IngestReportInput {
   criticalInfrastructure?: boolean;
   feederId?: string | null;
   reportedAt?: string;
+  /** Neighbour “same situation” join onto an existing open ticket. */
+  joinIncidentId?: string;
 }
 
 export interface DispatchRecommendation {
