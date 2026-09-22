@@ -74,7 +74,12 @@ export function TechnicianApp() {
       ? snapshot?.crews.find((c) => c.id === assigned.assignedCrewId)
       : undefined) ??
     snapshot?.crews.find((c) => c.userId === persona?.id) ??
-    snapshot?.crews.find((c) => c.id === persona?.crewId);
+    snapshot?.crews.find((c) => c.id === persona?.crewId) ??
+    snapshot?.crews.find((c) => {
+      if (!persona?.email) return false;
+      const owner = snapshot.users.find((user) => user.id === c.userId);
+      return (owner?.email ?? "").toLowerCase() === persona.email.toLowerCase();
+    });
   const pool = useMemo(
     () =>
       (snapshot?.incidents ?? []).filter(

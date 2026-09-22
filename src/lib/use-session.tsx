@@ -101,18 +101,21 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       },
       loginWithPassword: async (identifier: string, password: string) => {
         const secret = password.trim();
+        // Staff accounts (and their vans) live on the ops floor — try server first.
+        const remote = await loginAgainstServer(identifier, secret);
+        if (remote) {
+          cacheStaffLogin(remote, secret);
+          setPersona(remote);
+          persist(remote.id);
+          return remote;
+        }
         const local = findSignIn(identifier);
         if (local && local.password === secret) {
           setPersona(local.persona);
           persist(local.persona.id);
           return local.persona;
         }
-        const remote = await loginAgainstServer(identifier, secret);
-        if (!remote) return null;
-        cacheStaffLogin(remote, secret);
-        setPersona(remote);
-        persist(remote.id);
-        return remote;
+        return null;
       },
       loginWithGoogle: () => {
         const found = PERSONAS.find((p) => p.id === "usr_sibusiso") ?? null;

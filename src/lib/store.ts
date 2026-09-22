@@ -198,6 +198,7 @@ class ElectroRaidStore {
     if (live.weights) this.weights = { ...live.weights };
     this.applyStaffPasswords(live.staffPasswords);
     this.bootChases();
+    this.repairStaffCrews();
     this.syncAutoDispatchTimer();
   }
 
@@ -308,6 +309,7 @@ class ElectroRaidStore {
   snapshot(): PlatformSnapshot {
     this.refreshFromDisk();
     this.tickAutoDispatch();
+    this.repairStaffCrews();
     return this.view();
   }
 
@@ -1673,7 +1675,7 @@ class ElectroRaidStore {
     const secret = password.trim();
     if (!needle || !secret) return null;
 
-    const user = this.users.find((row) => {
+    const candidates = this.users.filter((row) => {
       if (!row.isActive) return false;
       if (!isLoginStaffRole(row.role)) return false;
       if (this.removedIds.includes(row.id)) return false;
@@ -1681,13 +1683,82 @@ class ElectroRaidStore {
       const name = row.fullName.trim().replace(/\s+/g, "").toLowerCase();
       return email === needle || name === needle || row.id.toLowerCase() === needle;
     });
+    if (!candidates.length) return null;
+
+    // Prefer the account whose stored password matches (duplicate usernames exist).
+    const user =
+      candidates.find((row) => this.staffPasswordFor(row.id) === secret) ?? null;
     if (!user) return null;
 
-    const expected = this.staffPasswordFor(user.id);
-    if (!expected || expected !== secret) return null;
+    const crew = this.ensureCrewForStaff(user);
+    return personaFromStaffUser(user, crew ?? undefined);
+  }
 
-    const crew = this.crews.find((row) => row.userId === user.id);
-    return personaFromStaffUser(user, crew);
+  /** Field roles always get a van so the technician map can render. */
+  ensureCrewForStaff(user: {
+    id: string;
+    fullName: string;
+    email: string | null;
+    phone: string | null;
+    role: User["role"];
+  }): FieldCrew | null {
+    if (user.role !== "technician" && user.role !== "revenue_inspector") {
+      return null;
+    }
+    const existing = this.crews.find((crew) => crew.userId === user.id);
+    if (existing) return existing;
+
+    const provision = this.provisioned.find((row) => row.id === user.id);
+    const crewId =
+      provision?.crewId && provision.crewId.trim()
+        ? provision.crewId
+        : `crew_${user.id.replace(/^usr_/, "") || Date.now().toString(36)}`;
+    const callsign =
+      provision?.callsign?.trim() ||
+      (user.role === "revenue_inspector"
+        ? `RP-${user.id.slice(-4).toUpperCase()}`
+        : `MT-${user.id.slice(-4).toUpperCase()}`);
+
+    this.syncCrew({
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email ?? user.id,
+      phone: user.phone,
+      role: user.role,
+      crewId,
+      callsign,
+      password: provision?.password ?? this.staffPasswordFor(user.id),
+    });
+
+    const idx = this.provisioned.findIndex((row) => row.id === user.id);
+    const nextProvision = {
+      id: user.id,
+      fullName: user.fullName,
+      email: (user.email ?? user.id).toLowerCase(),
+      phone: user.phone,
+      role: user.role,
+      crewId,
+      callsign,
+      password: provision?.password ?? this.staffPasswordFor(user.id),
+    };
+    if (idx >= 0) this.provisioned[idx] = { ...this.provisioned[idx], ...nextProvision };
+    else this.provisioned.push(nextProvision);
+
+    this.scheduleSave();
+    return this.crews.find((crew) => crew.userId === user.id) ?? null;
+  }
+
+  /** Repair any field staff that lost their van link. */
+  repairStaffCrews() {
+    let changed = false;
+    for (const user of this.users) {
+      if (user.role !== "technician" && user.role !== "revenue_inspector") continue;
+      if (this.removedIds.includes(user.id)) continue;
+      if (this.crews.some((crew) => crew.userId === user.id)) continue;
+      this.ensureCrewForStaff(user);
+      changed = true;
+    }
+    return changed;
   }
 
   private staffPasswordFor(userId: string): string | null {
@@ -1790,17 +1861,19 @@ class ElectroRaidStore {
       this.detachStaff(person.id);
       return;
     }
-    if (!person.crewId) return;
+    const crewId =
+      person.crewId?.trim() ||
+      `crew_${person.id.replace(/^usr_/, "") || Date.now().toString(36)}`;
     const specialization: Specialization =
       person.role === "revenue_inspector" ? "revenue_protection" : "maintenance";
     const others = this.crews.filter(
-      (crew) => crew.userId === person.id && crew.id !== person.crewId,
+      (crew) => crew.userId === person.id && crew.id !== crewId,
     );
     for (const crew of others) this.pullCrewOffJobs(crew.id);
     this.crews = this.crews.filter(
-      (crew) => crew.userId !== person.id || crew.id === person.crewId,
+      (crew) => crew.userId !== person.id || crew.id === crewId,
     );
-    const idx = this.crews.findIndex((crew) => crew.id === person.crewId);
+    const idx = this.crews.findIndex((crew) => crew.id === crewId);
     if (idx >= 0) {
       this.crews[idx] = {
         ...this.crews[idx],
@@ -1811,14 +1884,14 @@ class ElectroRaidStore {
       return;
     }
     this.crews.push({
-      id: person.crewId,
+      id: crewId,
       userId: person.id,
       callsign: person.callsign || (person.role === "technician" ? "MT-NEW" : "RP-NEW"),
       specialization,
       skillCertifications:
         person.role === "revenue_inspector"
-          ? ["METER_AUDIT", "SEAL_CHECK"]
-          : ["LV_BOARD", "OHL_REPAIR"],
+          ? ["METER_AUDIT", "SEAL_CHECK", "IZINYOKA", "METER_TAMPER", "PREPAID_AUDIT"]
+          : ["LV_BOARD", "OHL_REPAIR", "MV_JOINTING", "MINI_SUB"],
       status: "available",
       location: { lon: 28.1881, lat: -25.7461 },
       vehicleReg: `CT ${100 + this.crews.length} GP`,
@@ -1888,27 +1961,10 @@ class ElectroRaidStore {
       added = true;
     }
 
-    if (person.role !== "dispatcher" && person.crewId) {
-      if (!this.crews.some((crew) => crew.id === person.crewId)) {
-        const specialization: Specialization =
-          person.role === "revenue_inspector"
-            ? "revenue_protection"
-            : "maintenance";
-        this.crews.push({
-          id: person.crewId,
-          userId: person.id,
-          callsign: person.callsign || (person.role === "technician" ? "MT-NEW" : "RP-NEW"),
-          specialization,
-          skillCertifications:
-            person.role === "revenue_inspector"
-              ? ["METER_AUDIT", "SEAL_CHECK"]
-              : ["LV_BOARD", "OHL_REPAIR"],
-          status: "available",
-          location: { lon: 28.1881, lat: -25.7461 },
-          vehicleReg: `CT ${100 + this.crews.length} GP`,
-          activeQueueSize: 0,
-          lastGpsAt: nowIso(),
-        });
+    if (person.role !== "dispatcher") {
+      const before = this.crews.length;
+      this.syncCrew(person);
+      if (this.crews.length !== before || this.crews.some((c) => c.userId === person.id)) {
         added = true;
       }
     }
