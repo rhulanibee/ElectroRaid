@@ -58,7 +58,7 @@ export function ResidentDashboard() {
     .join("");
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 flex-col lg:h-full">
       <div className="flex flex-wrap items-center gap-3 border-b border-[#E5E7EB] bg-white px-4 py-3 md:px-6">
         <div className="relative min-w-0 flex-1">
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#9CA3AF]" />
@@ -148,8 +148,8 @@ export function ResidentDashboard() {
         )}
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-4 p-4 md:p-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-h-[280px] overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
+      <div className="grid gap-4 p-4 md:p-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
           {snapshot ? (
             <CommandMap
               incidents={ownIncidents}
@@ -162,21 +162,21 @@ export function ResidentDashboard() {
                 if (hit) go("/resident/track");
               }}
               showInvestigations={false}
-              className="h-full min-h-[280px] rounded-2xl"
+              className="h-52 min-h-[208px] w-full rounded-2xl sm:h-64 sm:min-h-[256px] lg:h-full lg:min-h-[280px]"
             />
           ) : (
-            <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-[#6B7280]">
+            <div className="flex h-52 min-h-[208px] items-center justify-center text-sm text-[#6B7280] sm:h-64">
               {connected ? "Loading the live map…" : "Reconnecting to operations…"}
             </div>
           )}
         </div>
 
-        <div className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
+        <div className="flex flex-col overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm lg:min-h-0">
           <div className="flex items-center justify-between border-b border-[#E5E7EB] px-4 py-3">
             <h2 className="font-heading text-sm font-bold">Active reports</h2>
             <span className="text-xs text-[#6B7280]">{tickets.length} open</span>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto p-3">
+          <div className="p-3 lg:min-h-0 lg:flex-1 lg:overflow-auto">
             {tickets.length === 0 ? (
               <div className="rounded-xl border border-dashed border-[#E5E7EB] px-3 py-8 text-center text-sm text-[#6B7280]">
                 No open outage on your feeder. Use Report Outage if the lights are

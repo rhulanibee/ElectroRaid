@@ -147,16 +147,17 @@ export function ResidentTrack() {
       )}
 
       {selected ? (
-        <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-h-[280px] overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
+        <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm">
             {crew ? (
               <TrackLiveMap
                 incident={selected}
                 crew={crew}
                 technicianName={techName ?? crew.callsign}
+                mapClassName="h-52 w-full min-h-[208px] sm:h-64 sm:min-h-[256px] md:h-80"
               />
             ) : (
-              <div className="flex h-full min-h-[280px] flex-col items-center justify-center px-6 text-center">
+              <div className="flex h-52 min-h-[208px] flex-col items-center justify-center px-6 text-center sm:h-64">
                 <div className="text-sm font-semibold text-[#121417]">
                   Waiting for a technician
                 </div>

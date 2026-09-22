@@ -16,7 +16,7 @@ import {
 } from "@/lib/format";
 import { usePlatform, postJson } from "@/lib/use-platform";
 import { useSession } from "@/lib/use-session";
-import { recommendCrews } from "@/lib/engines/dispatch";
+import { recommendCrews, skillsForInvestigation, skillsForOutage } from "@/lib/engines/dispatch";
 import { TrackLiveMap } from "@/components/track-live-map";
 import type {
   DispatchRecommendation,
@@ -78,14 +78,15 @@ export function CommandCenter() {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <section className="relative min-h-[52vh] lg:min-h-0">
+    <div className="grid min-h-0 grid-cols-1 lg:h-full lg:grid-cols-[minmax(0,1fr)_340px]">
+      <section className="relative h-56 min-h-[224px] sm:h-72 sm:min-h-[288px] lg:min-h-0 lg:h-auto">
         <CommandMap
           incidents={snapshot.incidents}
           investigations={snapshot.investigations}
           crews={snapshot.crews}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          className="h-full min-h-[224px] w-full sm:min-h-[288px] lg:min-h-0"
         />
         <div className="pointer-events-none absolute inset-x-3 top-3 z-[400] flex flex-wrap gap-2">
           <Kpi label="Open outages" value={String(roi.openIncidents)} hint="Tickets not yet restored" />
@@ -127,8 +128,8 @@ export function CommandCenter() {
               } disabled:opacity-60`}
               title={
                 autoOn
-                  ? "Auto-assign is on — tap to switch to manual"
-                  : "Turn on auto-assign — best crew gets open tickets"
+                  ? "Auto-assign is on — nearest skilled crew, keeps going until off"
+                  : "Turn on auto-assign — nearest skilled crew for open tickets"
               }
             >
               {autoBusy ? "…" : autoOn ? "Auto on" : "Auto off"}
@@ -136,8 +137,8 @@ export function CommandCenter() {
           </div>
           {autoOn ? (
             <p className="text-muted-foreground mt-1.5 text-[11px] leading-snug">
-              Automation is assigning the best available crew to open tickets.
-              Turn off anytime to assign by hand.
+              Matching by skill and proximity (within 25 km). Keeps assigning as
+              vans free up until you turn it off.
             </p>
           ) : null}
         </div>
@@ -154,6 +155,7 @@ export function CommandCenter() {
                 <IncidentRow
                   key={incident.id}
                   incident={incident}
+                  assignee={null}
                   reportCount={
                     snapshot.reports.filter((r) => r.masterIncidentId === incident.id)
                       .length
@@ -163,7 +165,7 @@ export function CommandCenter() {
                 />
               ))
             )}
-            <SectionTitle>Crews in the field</SectionTitle>
+            <SectionTitle>Jobs assigned (who is on them)</SectionTitle>
             {inField.length === 0 ? (
               <EmptyNote>No technician is en route or on site right now.</EmptyNote>
             ) : (
@@ -171,6 +173,11 @@ export function CommandCenter() {
                 <IncidentRow
                   key={incident.id}
                   incident={incident}
+                  assignee={assigneeLabel(
+                    incident.assignedCrewId,
+                    snapshot.crews,
+                    snapshot.users,
+                  )}
                   reportCount={
                     snapshot.reports.filter((r) => r.masterIncidentId === incident.id)
                       .length
@@ -188,6 +195,11 @@ export function CommandCenter() {
                 <IncidentRow
                   key={incident.id}
                   incident={incident}
+                  assignee={assigneeLabel(
+                    incident.assignedCrewId,
+                    snapshot.crews,
+                    snapshot.users,
+                  )}
                   reportCount={
                     snapshot.reports.filter((r) => r.masterIncidentId === incident.id)
                       .length
@@ -207,6 +219,11 @@ export function CommandCenter() {
                 <InvestigationRow
                   key={inv.id}
                   inv={inv}
+                  assignee={assigneeLabel(
+                    inv.assignedCrewId,
+                    snapshot.crews,
+                    snapshot.users,
+                  )}
                   active={selectedId === inv.id}
                   onClick={() => setSelectedId(inv.id)}
                 />
@@ -391,13 +408,27 @@ function EmptyNote({ children }: { children: ReactNode }) {
   return <p className="text-muted-foreground px-1 text-[11px]">{children}</p>;
 }
 
+function assigneeLabel(
+  crewId: string | null | undefined,
+  crews: FieldCrew[],
+  users: User[],
+): string | null {
+  if (!crewId) return null;
+  const crew = crews.find((row) => row.id === crewId);
+  if (!crew) return "Assigned crew";
+  const name = users.find((user) => user.id === crew.userId)?.fullName;
+  return name ? `${name} · ${crew.callsign}` : crew.callsign;
+}
+
 function IncidentRow({
   incident,
+  assignee,
   reportCount,
   active,
   onClick,
 }: {
   incident: MasterIncident;
+  assignee: string | null;
   reportCount: number;
   active: boolean;
   onClick: () => void;
@@ -428,6 +459,13 @@ function IncidentRow({
         </Badge>
       </div>
       <div className="mt-1 text-[12px] font-medium">{incident.suburb}</div>
+      {assignee ? (
+        <div className="mt-1 text-[12px] font-semibold text-[#167a34]">
+          On job: {assignee}
+        </div>
+      ) : (
+        <div className="text-muted-foreground mt-1 text-[11px]">No technician yet</div>
+      )}
       <div className="text-muted-foreground mt-0.5">
         {incidentStatusLabel(incident.status)}
       </div>
@@ -446,10 +484,12 @@ function IncidentRow({
 
 function InvestigationRow({
   inv,
+  assignee,
   active,
   onClick,
 }: {
   inv: RevenueInvestigation;
+  assignee: string | null;
   active: boolean;
   onClick: () => void;
 }) {
@@ -469,6 +509,13 @@ function InvestigationRow({
         <span className="text-gold tabular font-semibold">risk {inv.anomalyRiskScore}</span>
       </div>
       <div className="mt-1 text-[12px] font-medium">{inv.suburb}</div>
+      {assignee ? (
+        <div className="mt-1 text-[12px] font-semibold text-[#167a34]">
+          On job: {assignee}
+        </div>
+      ) : (
+        <div className="text-muted-foreground mt-1 text-[11px]">No inspector yet</div>
+      )}
       <div className="text-muted-foreground mt-0.5">
         {inv.type.replaceAll("_", " ")} · {inv.status.replaceAll("_", " ")}
         {inv.daysZeroConsumption ? ` · ${inv.daysZeroConsumption}d silent` : ""}
@@ -524,7 +571,9 @@ function DetailPane({
   }
 
   if (incident) {
-    const recs = recommendCrews(crews, users, incident.location, "outage", 8);
+    const recs = recommendCrews(crews, users, incident.location, "outage", 8, {
+      preferredSkills: skillsForOutage(incident.classification),
+    });
     const assigned = crews.find((c) => c.id === incident.assignedCrewId);
     const assignedName = assigned
       ? (users.find((u) => u.id === assigned.userId)?.fullName ?? assigned.callsign)
@@ -590,6 +639,7 @@ function DetailPane({
       investigation.location,
       "investigation",
       8,
+      { preferredSkills: skillsForInvestigation(investigation.type) },
     );
     const assigned = crews.find((c) => c.id === investigation.assignedCrewId);
     const canAssign =

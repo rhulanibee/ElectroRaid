@@ -22,6 +22,8 @@ import {
   recommendCrews,
   recommendationForCrew,
   specializationForJob,
+  skillsForInvestigation,
+  skillsForOutage,
   type JobKind,
 } from "./engines/dispatch";
 import { refreshIncidentPriority } from "./engines/priority";
@@ -119,6 +121,8 @@ class ElectroRaidStore {
   /** Dispatcher toggle: assign the best crew without a manual tap. */
   private autoDispatchEnabled = false;
   private autoDispatchTimer: ReturnType<typeof setInterval> | null = null;
+  /** Throttle auto ticks so state polls do not pile up assigns. */
+  private lastAutoDispatchAt = 0;
 
   constructor() {
     this.hydrate(true);
@@ -251,6 +255,7 @@ class ElectroRaidStore {
 
   snapshot(): PlatformSnapshot {
     this.refreshFromDisk();
+    this.tickAutoDispatch();
     return this.view();
   }
 
@@ -531,14 +536,28 @@ class ElectroRaidStore {
   recommend(kind: JobKind, targetId: string) {
     const target = this.jobLocation(kind, targetId);
     if (!target) return [];
-    return recommendCrews(this.crews, this.users, target.location, kind);
+    const preferredSkills =
+      kind === "outage"
+        ? skillsForOutage(
+            this.incidents.find((row) => row.id === targetId)?.classification ??
+              "no_power",
+          )
+        : skillsForInvestigation(
+            this.investigations.find((row) => row.id === targetId)?.type ??
+              "izinyoka_tip",
+          );
+    return recommendCrews(this.crews, this.users, target.location, kind, 5, {
+      preferredSkills,
+    });
   }
 
   /** Dispatcher turns automatic crew assignment on or off. */
   setAutoDispatch(enabled: boolean, actorId?: string) {
     const next = Boolean(enabled);
     if (this.autoDispatchEnabled === next) {
-      return { enabled: this.autoDispatchEnabled, assigned: 0 };
+      // Still tick when left on — keeps assigning as crews free up.
+      const assigned = next ? this.runAutoDispatch() : 0;
+      return { enabled: this.autoDispatchEnabled, assigned };
     }
     this.autoDispatchEnabled = next;
     const actor =
@@ -558,7 +577,7 @@ class ElectroRaidStore {
       type: next ? "dispatch.auto_on" : "dispatch.auto_off",
       title: next ? "Auto-assign turned on" : "Auto-assign turned off",
       detail: next
-        ? "Open tickets will get the best available crew automatically."
+        ? "Open tickets get the nearest skilled crew. Keeps running until you turn it off."
         : "New tickets wait for a manual assign from the control room.",
       severity: "info",
     });
@@ -568,9 +587,13 @@ class ElectroRaidStore {
     return { enabled: this.autoDispatchEnabled, assigned };
   }
 
-  /** Assign best crews to every open ticket that still needs one. */
+  /**
+   * Assign nearest skilled crews to open tickets. Safe to call repeatedly —
+   * skips jobs that already have a van or have no eligible crew in range.
+   */
   runAutoDispatch() {
     if (!this.autoDispatchEnabled) return 0;
+    this.lastAutoDispatchAt = Date.now();
     let assigned = 0;
     const openOutages = [...this.incidents]
       .filter(
@@ -581,11 +604,22 @@ class ElectroRaidStore {
       )
       .sort((a, b) => b.priorityScore - a.priorityScore);
     for (const incident of openOutages) {
+      const pick = pickBestCrew(
+        this.crews,
+        this.users,
+        incident.location,
+        "outage",
+        {
+          mode: "auto",
+          preferredSkills: skillsForOutage(incident.classification),
+        },
+      );
+      if (!pick) continue;
       try {
-        this.dispatch("outage", incident.id);
+        this.dispatch("outage", incident.id, pick.crewId);
         assigned += 1;
       } catch {
-        /* no matching available crew — leave ticket in Needs a crew */
+        /* crew became ineligible mid-loop */
       }
     }
     const openInvestigations = [...this.investigations]
@@ -597,14 +631,34 @@ class ElectroRaidStore {
       )
       .sort((a, b) => b.anomalyRiskScore - a.anomalyRiskScore);
     for (const item of openInvestigations) {
+      const pick = pickBestCrew(
+        this.crews,
+        this.users,
+        item.location,
+        "investigation",
+        {
+          mode: "auto",
+          preferredSkills: skillsForInvestigation(item.type),
+        },
+      );
+      if (!pick) continue;
       try {
-        this.dispatch("investigation", item.id);
+        this.dispatch("investigation", item.id, pick.crewId);
         assigned += 1;
       } catch {
-        /* no inspector available */
+        /* no inspector in range */
       }
     }
+    if (assigned > 0) this.scheduleSave();
     return assigned;
+  }
+
+  /** Periodic / poll-driven tick while auto-assign stays on. */
+  private tickAutoDispatch() {
+    if (!this.autoDispatchEnabled) return;
+    const now = Date.now();
+    if (now - this.lastAutoDispatchAt < 4_000) return;
+    this.runAutoDispatch();
   }
 
   private maybeAutoDispatch() {
@@ -619,9 +673,9 @@ class ElectroRaidStore {
       try {
         this.runAutoDispatch();
       } catch {
-        /* keep the timer alive */
+        /* keep the timer alive until the dispatcher turns auto off */
       }
-    }, 12_000);
+    }, 8_000);
   }
 
   private stopAutoDispatchTimer() {
@@ -637,6 +691,16 @@ class ElectroRaidStore {
 
     const spec = specializationForJob(kind);
     let pick: DispatchRecommendation | null = null;
+    const preferredSkills =
+      kind === "outage"
+        ? skillsForOutage(
+            this.incidents.find((row) => row.id === targetId)?.classification ??
+              "no_power",
+          )
+        : skillsForInvestigation(
+            this.investigations.find((row) => row.id === targetId)?.type ??
+              "izinyoka_tip",
+          );
     if (crewId) {
       const chosen = this.crews.find((c) => c.id === crewId);
       if (!chosen) throw new Error("Unknown crew");
@@ -644,9 +708,16 @@ class ElectroRaidStore {
         throw new Error("That crew cannot take this job type");
       }
       if (chosen.status === "off_duty") throw new Error("Crew is off duty");
-      pick = recommendationForCrew(chosen, this.users, target.location);
+      pick = recommendationForCrew(
+        chosen,
+        this.users,
+        target.location,
+        preferredSkills,
+      );
     } else {
-      pick = pickBestCrew(this.crews, this.users, target.location, kind);
+      pick = pickBestCrew(this.crews, this.users, target.location, kind, {
+        preferredSkills,
+      });
     }
 
     if (!pick) throw new Error("No available crew matches this specialisation");

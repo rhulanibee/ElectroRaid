@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import type { FieldCrew, MasterIncident, RevenueInvestigation } from "@/lib/types";
 import { priorityBand } from "@/lib/engines/priority";
+import { bindPageScrollFriendlyMap } from "@/lib/leaflet-mobile";
 import { DEDUP_RADIUS_M } from "@/lib/types";
 
 const TSHWANE: [number, number] = [-25.746, 28.229];
@@ -102,15 +103,25 @@ export function CommandMap({
       crewLayerRef.current = L.layerGroup().addTo(map);
       crewMarkers.current.clear();
       mapRef.current = map;
+      const unbindTouch = bindPageScrollFriendlyMap(map, el);
       requestAnimationFrame(() => map.invalidateSize());
       setMapReady(true);
+      return unbindTouch;
     }
 
-    mount();
+    let unbindTouch: (() => void) | undefined;
+    mount().then((cleanup) => {
+      if (cancelled) {
+        cleanup?.();
+        return;
+      }
+      unbindTouch = cleanup;
+    });
     const ro = new ResizeObserver(() => mapRef.current?.invalidateSize());
     ro.observe(el);
     return () => {
       cancelled = true;
+      unbindTouch?.();
       ro.disconnect();
       mapRef.current?.remove();
       mapRef.current = null;

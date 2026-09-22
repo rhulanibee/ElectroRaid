@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import type { FieldCrew, GeoPoint, MasterIncident, User } from "@/lib/types";
 import { distanceMetres, etaMinutes, formatKm } from "@/lib/geo";
+import { bindPageScrollFriendlyMap } from "@/lib/leaflet-mobile";
 
 export function TrackLiveMap({
   incident,
@@ -63,15 +64,25 @@ export function TrackLiveMap({
       }).addTo(map);
       layersRef.current = L.layerGroup().addTo(map);
       mapRef.current = map;
+      const unbindTouch = bindPageScrollFriendlyMap(map, el);
       requestAnimationFrame(() => map.invalidateSize());
       setReady(true);
+      return unbindTouch;
     }
 
-    mount();
+    let unbindTouch: (() => void) | undefined;
+    mount().then((cleanup) => {
+      if (cancelled) {
+        cleanup?.();
+        return;
+      }
+      unbindTouch = cleanup;
+    });
     const ro = new ResizeObserver(() => mapRef.current?.invalidateSize());
     ro.observe(el);
     return () => {
       cancelled = true;
+      unbindTouch?.();
       ro.disconnect();
       mapRef.current?.remove();
       mapRef.current = null;
@@ -157,8 +168,8 @@ export function TrackLiveMap({
     <div className="overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white">
       <div
         ref={elRef}
-        className={mapClassName ?? "h-64 w-full md:h-80"}
-        style={{ minHeight: 256 }}
+        className={mapClassName ?? "h-52 w-full sm:h-64 md:h-80"}
+        style={{ minHeight: 208 }}
       />
       <div className="flex items-start justify-between gap-3 bg-white px-3 py-2">
         <div>

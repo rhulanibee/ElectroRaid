@@ -129,7 +129,7 @@ export function TechnicianApp() {
     : "No vehicle assigned.";
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 px-4 py-4 md:px-6 md:py-6">
+    <div className="flex min-h-0 flex-col gap-4 px-4 py-4 md:px-6 md:py-6 lg:h-full">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold">Repair jobs</h1>
@@ -158,12 +158,12 @@ export function TechnicianApp() {
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div
           className={
             assigned && crew
-              ? "min-h-[320px]"
-              : "min-h-[320px] overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm lg:min-h-[calc(100dvh-220px)]"
+              ? "min-h-0"
+              : "overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-sm"
           }
         >
           {assigned && crew ? (
@@ -172,7 +172,7 @@ export function TechnicianApp() {
               crew={crew}
               technicianName={technicianNameForCrew(crew, snapshot?.users ?? [])}
               perspective="technician"
-              mapClassName="h-72 w-full min-h-[320px] lg:h-[calc(100dvh-300px)]"
+              mapClassName="h-52 w-full min-h-[208px] sm:h-64 sm:min-h-[256px] lg:h-[calc(100dvh-300px)] lg:min-h-[320px]"
             />
           ) : crew ? (
             <CommandMap
@@ -182,16 +182,16 @@ export function TechnicianApp() {
               selectedId={null}
               onSelect={() => {}}
               showInvestigations={false}
-              className="h-full min-h-[320px] w-full lg:min-h-[calc(100dvh-220px)]"
+              className="h-52 min-h-[208px] w-full sm:h-64 sm:min-h-[256px] lg:h-full lg:min-h-[calc(100dvh-220px)]"
             />
           ) : (
-            <div className="flex h-full min-h-[320px] items-center justify-center text-sm text-[#6B7280]">
+            <div className="flex h-52 min-h-[208px] items-center justify-center text-sm text-[#6B7280] sm:h-64">
               No vehicle is linked to this sign-in.
             </div>
           )}
         </div>
 
-        <div className="flex min-h-0 flex-col gap-3 overflow-auto">
+        <div className="flex flex-col gap-3 pb-6 lg:min-h-0 lg:overflow-auto lg:pb-0">
           {assigned ? (
             <JobCard
               incident={assigned}
