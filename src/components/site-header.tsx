@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { BrandLogo } from "@/components/brand-logo";
-import { go } from "@/lib/hard-nav";
+import { markNavPending } from "@/lib/hard-nav";
 
 /**
  * Public site navbar. Lifted unchanged from the landing page header so the
@@ -15,63 +16,57 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-30 border-b border-[#E5E7EB] bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4">
-        <a
+        <Link
           href="/"
-          onClick={(e) => {
-            e.preventDefault();
-            go("/");
-          }}
+          prefetch
+          onClick={() => markNavPending()}
           className="shrink-0"
         >
           <BrandLogo compact byline={null} />
-        </a>
+        </Link>
         <nav className="hidden items-center gap-6 text-sm font-medium text-[#374151] md:flex">
-          <a
+          <Link
             href="/"
-            onClick={(e) => {
-              e.preventDefault();
-              go("/");
-            }}
+            prefetch
+            onClick={() => markNavPending()}
             className="hover:text-[#24A148]"
           >
             Home
-          </a>
-          <a
+          </Link>
+          <Link
             href="/about"
-            onClick={(e) => {
-              e.preventDefault();
-              go("/about");
-            }}
+            prefetch
+            onClick={() => markNavPending()}
             className="hover:text-[#24A148]"
           >
             About Us
-          </a>
-          <a
+          </Link>
+          <Link
             href="/contact"
-            onClick={(e) => {
-              e.preventDefault();
-              go("/contact");
-            }}
+            prefetch
+            onClick={() => markNavPending()}
             className="hover:text-[#24A148]"
           >
             Contact Us
-          </a>
+          </Link>
         </nav>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => go("/login")}
+          <Link
+            href="/login"
+            prefetch
+            onClick={() => markNavPending()}
             className="hidden h-10 items-center rounded-xl px-3 text-sm font-semibold text-[#121417] hover:bg-[#F3F5F4] sm:inline-flex"
           >
             Login
-          </button>
-          <button
-            type="button"
-            onClick={() => go("/register")}
+          </Link>
+          <Link
+            href="/register"
+            prefetch
+            onClick={() => markNavPending()}
             className="inline-flex h-10 items-center rounded-xl bg-[#24A148] px-4 text-sm font-semibold text-white hover:bg-[#1e8a3c]"
           >
             Sign Up
-          </button>
+          </Link>
         </div>
       </div>
     </header>

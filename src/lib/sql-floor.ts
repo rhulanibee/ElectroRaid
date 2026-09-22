@@ -42,16 +42,30 @@ let client: SupabaseClient | null = null;
 let acceptingSaves = false;
 let saveChain: Promise<void> = Promise.resolve();
 
-export function supabaseConfigured(): boolean {
-  return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+function supabaseUrl() {
+  return (
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    ""
   );
+}
+
+function supabaseKey() {
+  return (
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    ""
+  );
+}
+
+export function supabaseConfigured(): boolean {
+  return Boolean(supabaseUrl() && supabaseKey());
 }
 
 function db(): SupabaseClient {
   if (!client) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+    const url = supabaseUrl();
+    const key = supabaseKey();
     if (!url || !key) throw new Error("Supabase env is not set");
     client = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },

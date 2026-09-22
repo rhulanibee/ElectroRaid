@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Bell,
@@ -14,7 +15,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { useResidentNotices } from "@/lib/use-resident-notices";
 import { useSession } from "@/lib/use-session";
 import { navForRole, navItemActive } from "@/lib/session";
-import { go, goReplace } from "@/lib/hard-nav";
+import { go, goReplace, markNavPending } from "@/lib/hard-nav";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<string, typeof LayoutDashboard> = {
@@ -71,13 +72,11 @@ export function ResidentShell({ children }: { children: React.ReactNode }) {
             const Icon = ICONS[item.href] ?? LayoutDashboard;
             const active = navItemActive(pathname, item.href);
             return (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
-                onClick={(e) => {
-                  e.preventDefault();
-                  go(item.href);
-                }}
+                prefetch
+                onClick={() => markNavPending()}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition",
                   active
@@ -99,7 +98,7 @@ export function ResidentShell({ children }: { children: React.ReactNode }) {
                     {unread > 9 ? "9+" : unread}
                   </span>
                 ) : null}
-              </a>
+              </Link>
             );
           })}
         </nav>
@@ -142,13 +141,11 @@ export function ResidentShell({ children }: { children: React.ReactNode }) {
             const Icon = ICONS[item.href] ?? LayoutDashboard;
             const active = navItemActive(pathname, item.href);
             return (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
-                onClick={(e) => {
-                  e.preventDefault();
-                  go(item.href);
-                }}
+                prefetch
+                onClick={() => markNavPending()}
                 className={cn(
                   "flex flex-col items-center gap-1 py-2 text-[10px] font-medium",
                   active ? "text-[#24A148]" : "text-[#6B7280]",
@@ -163,7 +160,7 @@ export function ResidentShell({ children }: { children: React.ReactNode }) {
                   ) : null}
                 </span>
                 {item.label.replace("Outage", "").replace("Reports", "Track")}
-              </a>
+              </Link>
             );
           })}
         </nav>

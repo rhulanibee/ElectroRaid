@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import {
   Activity,
   ClipboardList,
@@ -16,7 +17,7 @@ import { formatZar } from "@/lib/format";
 import { useEffect, useState } from "react";
 import { useSession } from "@/lib/use-session";
 import { navForRole, navItemActive } from "@/lib/session";
-import { go, goReplace } from "@/lib/hard-nav";
+import { go, goReplace, markNavPending } from "@/lib/hard-nav";
 import { BrandLogo } from "@/components/brand-logo";
 
 const ICONS: Record<string, typeof LayoutDashboard> = {
@@ -91,13 +92,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             const Icon = ICONS[item.href] ?? Activity;
             const active = navItemActive(pathname, item.href);
             return (
-              <a
+              <Link
                 key={item.href}
                 href={item.href}
-                onClick={(e) => {
-                  e.preventDefault();
-                  go(item.href);
-                }}
+                prefetch
+                onClick={() => markNavPending()}
                 className={cn(
                   "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition",
                   active
@@ -107,7 +106,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <Icon className="size-4" />
                 {item.label}
-              </a>
+              </Link>
             );
           })}
         </nav>
@@ -197,20 +196,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {nav.map((item) => {
               const active = pathname === item.href;
               return (
-                <a
+                <Link
                   key={item.href}
                   href={item.href}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    go(item.href);
-                  }}
+                  prefetch
+                  onClick={() => markNavPending()}
                   className={cn(
                     "py-2 text-center text-[10px] font-medium",
                     active ? "text-[#24A148]" : "text-[#6B7280]",
                   )}
                 >
                   {item.label}
-                </a>
+                </Link>
               );
             })}
           </div>

@@ -160,3 +160,16 @@
   background:
     linear-gradient(180deg, rgba(8, 16, 12, 0.35) 0%, rgba(8, 16, 12, 0.45) 45%, rgba(8, 16, 12, 0.72) 100%);
 }
+
+.nav-progress-bar {
+  animation: nav-progress 0.85s ease-in-out infinite;
+}
+
+@keyframes nav-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}

@@ -26,17 +26,34 @@ New residents can **Register**, upload proof of residence, then use the green si
 
 ## What is running
 
-Next.js with TypeScript engines that mirror a production PostgreSQL + PostGIS design.
+Next.js with TypeScript engines that mirror a production PostgreSQL + PostGIS design. The live floor can persist to Supabase.
 
 | Layer | Where |
 | --- | --- |
 | PostGIS schema, indexes, SQL functions | `db/schema.sql` |
+| Supabase / app tables | `db/supabase.sql` (run once in the Supabase SQL editor) |
 | Spatial dedup, priority, anomaly, dispatch, audit, ROI | `src/lib/engines/` |
-| In-memory store (hot-reload safe) | `src/lib/store.ts` |
+| In-memory store + Supabase save | `src/lib/store.ts`, `src/lib/sql-floor.ts` |
 | REST + SSE | `src/app/api/` |
 | Command map, field PWA, audit, analytics | `src/app/` and `src/components/` |
 
-Production would swap the store for Postgres. The engines stay the same — they already implement the SQL in `db/schema.sql` (`ST_DWithin` 500 m / 2 h, `compute_priority_score`, `recommend_crew`, `zero_consumption_candidates`).
+### Supabase on Vercel / local
+
+Set either naming style (both work):
+
+```
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+or
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+Redeploy after adding env vars on Vercel.
 
 ## Priority score
 
