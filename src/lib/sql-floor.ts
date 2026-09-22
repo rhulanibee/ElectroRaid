@@ -421,6 +421,7 @@ async function writeFloor(
     role: person.role,
     crew_id: person.crewId,
     callsign: person.callsign,
+    password: person.password ?? null,
   }));
 
   // Upsert first so readers never see empty tables during a save.
@@ -435,7 +436,15 @@ async function writeFloor(
   await upsertRows("immutable_audit_logs", audit);
   await upsertRows("live_events", events);
   await upsertRows("removed_staff", removed, "user_id");
-  await upsertRows("staff_provisions", provisioned);
+  try {
+    await upsertRows("staff_provisions", provisioned);
+  } catch {
+    // Older Supabase projects without the password column.
+    await upsertRows(
+      "staff_provisions",
+      provisioned.map(({ password: _password, ...row }) => row),
+    );
+  }
   await upsertRows("priority_weights", [
     {
       id: 1,
@@ -690,5 +699,6 @@ function mapProvision(row: Record<string, unknown>): StaffProvision {
     role: row.role as StaffProvision["role"],
     crewId: row.crew_id == null ? null : String(row.crew_id),
     callsign: row.callsign == null ? null : String(row.callsign),
+    password: row.password == null ? null : String(row.password),
   };
 }

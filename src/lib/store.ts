@@ -32,6 +32,13 @@ import { ingestReport, joinExistingIncident } from "./engines/spatial";
 import { distanceMetres, etaMinutes, lerpPoint, pointForSuburb } from "./geo";
 import { hoursAgo, newId, nowIso } from "./id";
 import { seedPlatform } from "./seed";
+import {
+  isLoginStaffRole,
+  mergeStaffPassword,
+  personaFromStaffUser,
+} from "./staff-auth";
+import { ADMIN_PASSWORD, SIGNIN_PASSWORD } from "./staff-meta";
+import type { DemoPersona } from "./session";
 import type {
   AuditLog,
   DispatchRecommendation,
@@ -1568,21 +1575,80 @@ class ElectroRaidStore {
     for (const person of people) {
       if (!person.id || !person.fullName || !person.role) continue;
       if (this.removedIds.includes(person.id)) continue;
+      const previous = this.provisioned.find((row) => row.id === person.id);
+      const merged = mergeStaffPassword(person, previous);
       const existing = this.users.find((user) => user.id === person.id);
       if (existing) {
-        if (this.applyStaffUpdate(person)) changed = true;
+        if (this.applyStaffUpdate(merged)) changed = true;
       } else {
-        const added = this.insertStaff(person, true);
-        if (added) created.push(person);
+        const added = this.insertStaff(merged, true);
+        if (added) created.push(merged);
       }
-      if (!SEEDED_STAFF.has(person.id)) {
-        const idx = this.provisioned.findIndex((row) => row.id === person.id);
-        if (idx >= 0) this.provisioned[idx] = person;
-        else this.provisioned.push(person);
+      if (!SEEDED_STAFF.has(merged.id)) {
+        const idx = this.provisioned.findIndex((row) => row.id === merged.id);
+        if (idx >= 0) {
+          if (
+            this.provisioned[idx].password !== merged.password ||
+            this.provisioned[idx].email !== merged.email ||
+            this.provisioned[idx].fullName !== merged.fullName ||
+            this.provisioned[idx].role !== merged.role ||
+            this.provisioned[idx].callsign !== merged.callsign ||
+            this.provisioned[idx].crewId !== merged.crewId
+          ) {
+            changed = true;
+          }
+          this.provisioned[idx] = merged;
+        } else {
+          this.provisioned.push(merged);
+          changed = true;
+        }
+      } else if (merged.password) {
+        // Keep an optional password override for seeded staff.
+        const idx = this.provisioned.findIndex((row) => row.id === merged.id);
+        if (idx >= 0) this.provisioned[idx] = { ...this.provisioned[idx], ...merged };
+        else this.provisioned.push(merged);
+        changed = true;
       }
     }
-    if (changed) this.scheduleSave();
+    if (changed || created.length) this.scheduleSave();
     return created;
+  }
+
+  /**
+   * Authenticate municipal staff (and admin) against the live floor.
+   * Residents still sign in from the browser registry.
+   */
+  authenticateStaff(
+    identifier: string,
+    password: string,
+  ): DemoPersona | null {
+    const needle = identifier.trim().replace(/\s+/g, "").toLowerCase();
+    const secret = password.trim();
+    if (!needle || !secret) return null;
+
+    const user = this.users.find((row) => {
+      if (!row.isActive) return false;
+      if (!isLoginStaffRole(row.role)) return false;
+      if (this.removedIds.includes(row.id)) return false;
+      const email = (row.email ?? "").trim().toLowerCase();
+      const name = row.fullName.trim().replace(/\s+/g, "").toLowerCase();
+      return email === needle || name === needle || row.id.toLowerCase() === needle;
+    });
+    if (!user) return null;
+
+    const expected = this.staffPasswordFor(user.id);
+    if (!expected || expected !== secret) return null;
+
+    const crew = this.crews.find((row) => row.userId === user.id);
+    return personaFromStaffUser(user, crew);
+  }
+
+  private staffPasswordFor(userId: string): string | null {
+    const provisioned = this.provisioned.find((row) => row.id === userId)?.password;
+    if (provisioned && provisioned.trim()) return provisioned.trim();
+    if (userId === "usr_admin") return ADMIN_PASSWORD;
+    if (SEEDED_STAFF.has(userId)) return SIGNIN_PASSWORD;
+    return null;
   }
 
   removeStaff(ids: string[]) {

@@ -1,4 +1,5 @@
 import {
+  ADMIN_PASSWORD,
   ADMIN_USERNAME,
   clearStaffOverride,
   loadRegistered,
@@ -9,10 +10,14 @@ import {
   saveRegistered,
   saveStaffOverride,
   saveStaffRemoved,
+  SIGNIN_PASSWORD,
   type DemoPersona,
   type StaffOverride,
 } from "@/lib/session";
+import { staffHome, staffTitle } from "@/lib/staff-meta";
 import type { StaffProvision, StaffRole } from "@/lib/types";
+
+export { staffHome, staffTitle } from "@/lib/staff-meta";
 
 export interface StaffDraft {
   firstName: string;
@@ -32,28 +37,6 @@ const STAFF_ROLES: StaffRole[] = [
 
 export function isStaffRole(role: string): role is StaffRole {
   return STAFF_ROLES.includes(role as StaffRole);
-}
-
-export function staffHome(role: StaffRole) {
-  switch (role) {
-    case "technician":
-      return "/tech";
-    case "revenue_inspector":
-      return "/inspect";
-    default:
-      return "/ops";
-  }
-}
-
-export function staffTitle(role: StaffRole, callsign: string) {
-  switch (role) {
-    case "technician":
-      return `Field technician · ${callsign}`;
-    case "revenue_inspector":
-      return `Revenue protection investigator · ${callsign}`;
-    default:
-      return "Control room dispatcher";
-  }
 }
 
 function nextCallsign(role: StaffRole) {
@@ -261,6 +244,17 @@ export function addStaffAccount(
   return { persona };
 }
 
+function passwordForAccount(row: ManagedStaff): string {
+  if (row.builtin) {
+    const override = loadStaffOverrides()[row.persona.id];
+    if (override?.password) return override.password;
+    if (row.persona.id === "usr_admin") return ADMIN_PASSWORD;
+    return SIGNIN_PASSWORD;
+  }
+  const registered = loadRegistered().find((item) => item.persona.id === row.persona.id);
+  return registered?.password || SIGNIN_PASSWORD;
+}
+
 export function staffProvisions(): StaffProvision[] {
   const people: StaffProvision[] = [];
   for (const row of listStaffAccounts()) {
@@ -274,9 +268,17 @@ export function staffProvisions(): StaffProvision[] {
       role,
       crewId: row.persona.crewId ?? null,
       callsign: row.persona.callsign ?? null,
+      password: passwordForAccount(row),
     });
   }
   return people;
+}
+
+/** Cache a server-authenticated staff persona so refresh keeps the session. */
+export function cacheStaffLogin(persona: DemoPersona, password: string) {
+  if (!isStaffRole(persona.role) && persona.role !== "admin") return;
+  const rows = loadRegistered().filter((row) => row.persona.id !== persona.id);
+  saveRegistered([...rows, { persona, password }]);
 }
 
 /** Push the staff directory onto the live ops floor, including removals. */
@@ -284,9 +286,12 @@ export async function syncLocalStaff() {
   const people = staffProvisions();
   const removeIds = loadStaffRemoved();
   if (!people.length && !removeIds.length) return;
-  await fetch("/api/staff", {
+  const res = await fetch("/api/staff", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ people, removeIds }),
   });
+  if (!res.ok) {
+    throw new Error("Staff sync failed");
+  }
 }

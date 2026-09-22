@@ -1,8 +1,11 @@
 import type { UserRole } from "./types";
+import {
+  ADMIN_PASSWORD,
+  ADMIN_USERNAME,
+  SIGNIN_PASSWORD,
+} from "./staff-meta";
 
-export const SIGNIN_PASSWORD = "electroraid";
-export const ADMIN_USERNAME = "admin";
-export const ADMIN_PASSWORD = "Admin123";
+export { SIGNIN_PASSWORD, ADMIN_USERNAME, ADMIN_PASSWORD };
 export const SESSION_KEY = "electroraid.session";
 export const REGISTERED_KEY = "electroraid.registered";
 export const PROFILE_KEY = "electroraid.profiles";

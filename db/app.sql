@@ -175,7 +175,8 @@ CREATE TABLE IF NOT EXISTS staff_provisions (
   phone     TEXT,
   role      TEXT NOT NULL,
   crew_id   TEXT,
-  callsign  TEXT
+  callsign  TEXT,
+  password  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS floor_meta (

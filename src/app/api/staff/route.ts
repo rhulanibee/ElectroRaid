@@ -24,6 +24,10 @@ function asProvision(value: unknown): StaffProvision | null {
         ? row.crewId
         : null;
   if (row.role !== "dispatcher" && !crewId) return null;
+  const password =
+    typeof row.password === "string" && row.password.trim().length >= 8
+      ? row.password.trim()
+      : null;
   return {
     id: row.id,
     fullName: row.fullName.trim(),
@@ -32,6 +36,7 @@ function asProvision(value: unknown): StaffProvision | null {
     role: row.role,
     crewId,
     callsign: typeof row.callsign === "string" ? row.callsign.trim() : null,
+    password,
   };
 }
 

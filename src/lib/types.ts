@@ -23,6 +23,8 @@ export interface StaffProvision {
   role: StaffRole;
   crewId: string | null;
   callsign: string | null;
+  /** Sign-in password. Stored on the live floor so any device can authenticate. */
+  password?: string | null;
 }
 
 export type OutageClassification =

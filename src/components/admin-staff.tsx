@@ -140,8 +140,8 @@ export function AdminStaff() {
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-6">
       <h1 className="font-heading text-2xl font-bold">Staff</h1>
       <p className="mt-1 text-sm text-[#6B7280]">
-        Add, edit, or remove dispatchers, technicians, and inspectors. Changes
-        apply to sign-in on this device and to the live floor.
+        Add, edit, or remove dispatchers, technicians, and inspectors. Usernames
+        and passwords sync to the live floor so staff can sign in from any device.
       </p>
 
       <form

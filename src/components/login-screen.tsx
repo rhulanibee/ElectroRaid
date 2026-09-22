@@ -40,7 +40,7 @@ export function LoginScreen() {
     setError(null);
     try {
       await new Promise((resolve) => setTimeout(resolve, 250));
-      const persona = loginWithPassword(identifier, password);
+      const persona = await loginWithPassword(identifier, password);
       if (!persona) {
         setError("Account number / email or password is incorrect.");
         return;

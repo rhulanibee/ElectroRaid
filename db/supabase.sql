@@ -173,8 +173,12 @@ CREATE TABLE IF NOT EXISTS staff_provisions (
   phone     TEXT,
   role      TEXT NOT NULL,
   crew_id   TEXT,
-  callsign  TEXT
+  callsign  TEXT,
+  password  TEXT
 );
+
+-- Existing projects: allow staff to sign in from any device.
+ALTER TABLE staff_provisions ADD COLUMN IF NOT EXISTS password TEXT;
 
 CREATE TABLE IF NOT EXISTS floor_meta (
   id              INTEGER PRIMARY KEY CHECK (id = 1),

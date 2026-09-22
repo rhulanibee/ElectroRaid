@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import {
@@ -13,12 +13,16 @@ import {
   type DemoPersona,
   type RegisterInput,
 } from "./session";
+import { cacheStaffLogin } from "./staff";
 
 interface SessionValue {
   persona: DemoPersona | null;
   ready: boolean;
   login: (id: string) => DemoPersona | null;
-  loginWithPassword: (identifier: string, password: string) => DemoPersona | null;
+  loginWithPassword: (
+    identifier: string,
+    password: string,
+  ) => Promise<DemoPersona | null>;
   loginWithGoogle: () => DemoPersona | null;
   register: (input: RegisterInput) => { persona: DemoPersona | null; error?: string };
   completeVerification: (proofName: string) => DemoPersona | null;
@@ -37,7 +41,7 @@ const SessionContext = createContext<SessionValue>({
   persona: null,
   ready: false,
   login: () => null,
-  loginWithPassword: () => null,
+  loginWithPassword: async () => null,
   loginWithGoogle: () => null,
   register: () => ({ persona: null }),
   completeVerification: () => null,
@@ -47,6 +51,24 @@ const SessionContext = createContext<SessionValue>({
 
 function persist(id: string) {
   localStorage.setItem(SESSION_KEY, JSON.stringify({ id }));
+}
+
+async function loginAgainstServer(identifier: string, password: string) {
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password }),
+    });
+    const data = (await res.json()) as {
+      ok?: boolean;
+      persona?: DemoPersona;
+    };
+    if (!res.ok || !data.ok || !data.persona) return null;
+    return data.persona;
+  } catch {
+    return null;
+  }
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
@@ -77,12 +99,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         if (found) persist(found.id);
         return found;
       },
-      loginWithPassword: (identifier: string, password: string) => {
-        const match = findSignIn(identifier);
-        if (!match || match.password !== password.trim()) return null;
-        setPersona(match.persona);
-        persist(match.persona.id);
-        return match.persona;
+      loginWithPassword: async (identifier: string, password: string) => {
+        const secret = password.trim();
+        const local = findSignIn(identifier);
+        if (local && local.password === secret) {
+          setPersona(local.persona);
+          persist(local.persona.id);
+          return local.persona;
+        }
+        const remote = await loginAgainstServer(identifier, secret);
+        if (!remote) return null;
+        cacheStaffLogin(remote, secret);
+        setPersona(remote);
+        persist(remote.id);
+        return remote;
       },
       loginWithGoogle: () => {
         const found = PERSONAS.find((p) => p.id === "usr_sibusiso") ?? null;
@@ -111,7 +141,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
             error: "An account already exists for that email or account number. Sign in instead.",
           };
         }
-        const persona: DemoPersona = {
+        const nextPersona: DemoPersona = {
           id: `usr_${Date.now()}`,
           name: `${input.firstName.trim()} ${input.lastName.trim()}`,
           firstName: input.firstName.trim(),
@@ -127,10 +157,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           blurb: "Report a fault and track restoration.",
           duties: ["Report", "Track", "Confirm"],
         };
-        saveRegistered([...loadRegistered(), { persona, password: input.password }]);
-        setPersona(persona);
-        persist(persona.id);
-        return { persona };
+        saveRegistered([...loadRegistered(), { persona: nextPersona, password: input.password }]);
+        setPersona(nextPersona);
+        persist(nextPersona.id);
+        return { persona: nextPersona };
       },
       completeVerification: (proofName: string) => {
         if (!persona) return null;
