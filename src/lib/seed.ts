@@ -71,6 +71,16 @@ export function seedPlatform(): PlatformSnapshot {
       isActive: true,
       createdAt,
     },
+    {
+      id: "usr_admin",
+      employeeNo: "ADM-001",
+      fullName: "Admin",
+      email: "admin",
+      phone: null,
+      role: "admin",
+      isActive: true,
+      createdAt,
+    },
   ];
 
   const crews: FieldCrew[] = [

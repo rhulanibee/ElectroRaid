@@ -97,6 +97,8 @@ interface LiveFloorFile {
   floorRevision?: number;
   weights?: PlatformSnapshot["weights"];
   autoDispatchEnabled?: boolean;
+  /** Username passwords keyed by user id — survives when staff_provisions.password is missing. */
+  staffPasswords?: Record<string, string>;
 }
 
 class ElectroRaidStore {
@@ -194,8 +196,46 @@ class ElectroRaidStore {
     this.floorRevision = live.floorRevision ?? 0;
     this.autoDispatchEnabled = Boolean(live.autoDispatchEnabled);
     if (live.weights) this.weights = { ...live.weights };
+    this.applyStaffPasswords(live.staffPasswords);
     this.bootChases();
     this.syncAutoDispatchTimer();
+  }
+
+  private applyStaffPasswords(passwords: Record<string, string> | undefined) {
+    if (!passwords) return;
+    for (const [id, password] of Object.entries(passwords)) {
+      if (!password?.trim()) continue;
+      const idx = this.provisioned.findIndex((row) => row.id === id);
+      if (idx >= 0) {
+        if (!this.provisioned[idx].password) {
+          this.provisioned[idx] = {
+            ...this.provisioned[idx],
+            password: password.trim(),
+          };
+        }
+      } else {
+        const user = this.users.find((row) => row.id === id);
+        if (!user) continue;
+        if (
+          user.role !== "technician" &&
+          user.role !== "dispatcher" &&
+          user.role !== "revenue_inspector"
+        ) {
+          continue;
+        }
+        const crew = this.crews.find((row) => row.userId === id);
+        this.provisioned.push({
+          id,
+          fullName: user.fullName,
+          email: user.email ?? id,
+          phone: user.phone,
+          role: user.role,
+          crewId: crew?.id ?? null,
+          callsign: crew?.callsign ?? null,
+          password: password.trim(),
+        });
+      }
+    }
   }
 
   private toLiveFile(): LiveFloorFile {
@@ -216,6 +256,11 @@ class ElectroRaidStore {
       floorRevision: this.floorRevision,
       weights: this.weights,
       autoDispatchEnabled: this.autoDispatchEnabled,
+      staffPasswords: Object.fromEntries(
+        this.provisioned
+          .filter((person) => person.password && person.password.trim())
+          .map((person) => [person.id, person.password!.trim()]),
+      ),
     };
   }
 
@@ -1389,6 +1434,7 @@ class ElectroRaidStore {
         this.autoDispatchEnabled = live.autoDispatchEnabled;
         this.syncAutoDispatchTimer();
       }
+      this.applyStaffPasswords(live.staffPasswords);
       this.diskMtime = mtime;
     } catch {
       /* keep the in-memory floor */
@@ -1467,6 +1513,7 @@ class ElectroRaidStore {
         this.autoDispatchEnabled = live.autoDispatchEnabled;
         this.syncAutoDispatchTimer();
       }
+      this.applyStaffPasswords(live.staffPasswords);
       this.diskMtime = fs.statSync(LIVE_PATH).mtimeMs;
     } catch {
       /* keep the sign-in floor if the file is unreadable */

@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS floor_meta (
 
 -- Existing projects: add the auto-dispatch flag if the table already existed.
 ALTER TABLE floor_meta ADD COLUMN IF NOT EXISTS auto_dispatch BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE floor_meta ADD COLUMN IF NOT EXISTS staff_passwords JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- The Next.js server signs in with the publishable key (anon).
 ALTER TABLE users DISABLE ROW LEVEL SECURITY;

@@ -37,6 +37,7 @@ export interface SqlFloor {
   floorRevision: number;
   weights: PriorityWeights;
   autoDispatchEnabled?: boolean;
+  staffPasswords?: Record<string, string>;
 }
 
 let client: SupabaseClient | null = null;
@@ -189,6 +190,11 @@ export async function loadFloor(): Promise<SqlFloor | null> {
     removedIds: removed.map((row) => String(row.user_id)),
     floorRevision: num(meta[0]?.floor_revision ?? 0),
     autoDispatchEnabled: Boolean(meta[0]?.auto_dispatch ?? false),
+    staffPasswords: mergePasswordMaps(
+      parseStaffPasswords(meta[0]?.staff_passwords),
+      passwordsFromEvents(events.map(mapEvent)),
+      passwordsFromProvisions(provisioned.map(mapProvision)),
+    ),
     weights: {
       wHouseholds: num(weights[0]?.w_households ?? 12),
       wCritical: num(weights[0]?.w_critical ?? 280),
@@ -402,16 +408,34 @@ async function writeFloor(
     prev_hash: row.prevHash,
     entry_hash: row.entryHash,
   }));
-  const events = floor.events.map((event) => ({
-    id: event.id,
-    type: event.type,
-    title: event.title,
-    detail: event.detail,
-    at: event.at,
-    severity: event.severity,
-    entity_type: event.entityType ?? null,
-    entity_id: event.entityId ?? null,
-  }));
+  const events = floor.events
+    .filter((event) => event.type !== "staff.credentials")
+    .map((event) => ({
+      id: event.id,
+      type: event.type,
+      title: event.title,
+      detail: event.detail,
+      at: event.at,
+      severity: event.severity,
+      entity_type: event.entityType ?? null,
+      entity_id: event.entityId ?? null,
+    }));
+  const passwordMap = mergePasswordMaps(
+    floor.staffPasswords,
+    passwordsFromProvisions(floor.provisioned),
+  );
+  if (passwordMap && Object.keys(passwordMap).length) {
+    events.push({
+      id: "evt_staff_credentials",
+      type: "staff.credentials",
+      title: "Staff sign-in credentials",
+      detail: JSON.stringify(passwordMap),
+      at: new Date().toISOString(),
+      severity: "info",
+      entity_type: "platform",
+      entity_id: "staff_credentials",
+    });
+  }
   const removed = floor.removedIds.map((userId) => ({ user_id: userId }));
   const provisioned = floor.provisioned.map((person) => ({
     id: person.id,
@@ -459,13 +483,24 @@ async function writeFloor(
         id: 1,
         floor_revision: floor.floorRevision,
         auto_dispatch: Boolean(floor.autoDispatchEnabled),
+        staff_passwords: floor.staffPasswords ?? {},
       },
     ]);
   } catch {
-    // Older Supabase projects without auto_dispatch column.
-    await upsertRows("floor_meta", [
-      { id: 1, floor_revision: floor.floorRevision },
-    ]);
+    try {
+      await upsertRows("floor_meta", [
+        {
+          id: 1,
+          floor_revision: floor.floorRevision,
+          auto_dispatch: Boolean(floor.autoDispatchEnabled),
+        },
+      ]);
+    } catch {
+      // Older Supabase projects without auto_dispatch column.
+      await upsertRows("floor_meta", [
+        { id: 1, floor_revision: floor.floorRevision },
+      ]);
+    }
   }
 
   // Prune rows that were removed from the live floor.
@@ -688,6 +723,57 @@ function mapEvent(row: Record<string, unknown>): LiveEvent {
     entityType: row.entity_type == null ? undefined : String(row.entity_type),
     entityId: row.entity_id == null ? undefined : String(row.entity_id),
   };
+}
+
+function parseStaffPasswords(value: unknown): Record<string, string> | undefined {
+  if (!value) return undefined;
+  let raw: unknown = value;
+  if (typeof value === "string") {
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [id, password] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof password === "string" && password.trim()) out[id] = password.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function passwordsFromProvisions(
+  people: StaffProvision[],
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const person of people) {
+    if (person.password?.trim()) out[person.id] = person.password.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function passwordsFromEvents(
+  events: LiveEvent[],
+): Record<string, string> | undefined {
+  const hit = [...events]
+    .reverse()
+    .find((event) => event.type === "staff.credentials");
+  if (!hit?.detail) return undefined;
+  return parseStaffPasswords(hit.detail);
+}
+
+function mergePasswordMaps(
+  ...maps: Array<Record<string, string> | undefined>
+): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const map of maps) {
+    if (!map) continue;
+    for (const [id, password] of Object.entries(map)) {
+      if (password?.trim()) out[id] = password.trim();
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function mapProvision(row: Record<string, unknown>): StaffProvision {
