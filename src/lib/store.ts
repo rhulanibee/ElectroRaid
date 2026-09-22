@@ -60,7 +60,7 @@ import type {
 import { DEFAULT_WEIGHTS } from "./types";
 
 const MAX_EVENTS = 80;
-const SEEDED_STAFF = new Set(["usr_thandiwe", "usr_sipho", "usr_nomsa"]);
+const SEEDED_STAFF = new Set(["usr_thandiwe", "usr_naledi", "usr_nomsa"]);
 const LIVE_PATH = path.join(process.cwd(), "data", "live-floor.json");
 
 function keepNewer<T>(
